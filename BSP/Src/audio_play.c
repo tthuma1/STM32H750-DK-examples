@@ -46,6 +46,12 @@
 /* Audio file size and start address are defined here since the audio file is
    stored in Flash memory as a constant table of 16-bit data */
 #define AUDIO_START_OFFSET_ADDRESS    0            /* Offset relative to audio file header size */
+
+#define SAMPLE_RATE     48000.0f
+#define TONE_FREQ       100.0f
+#define AMPLITUDE       30000     // int16 max is 32767
+#define TWO_PI          6.28318530718f
+
 /* Private typedef -----------------------------------------------------------*/
 typedef enum {
   AUDIO_STATE_IDLE = 0,
@@ -61,10 +67,10 @@ typedef enum {
 
 typedef struct {
   uint8_t buff[AUDIO_BUFFER_SIZE];
-  uint32_t fptr;
+  // uint32_t fptr;
   BUFFER_StateTypeDef state;
-  uint32_t AudioFileSize;
-  uint32_t *SrcAddress;
+  // uint32_t AudioFileSize;
+  // uint32_t *SrcAddress;
 }AUDIO_BufferTypeDef;
 
 /* Private macro -------------------------------------------------------------*/
@@ -83,10 +89,15 @@ BSP_AUDIO_Init_t AudioPlayInit;
 
 uint32_t OutputDevice = 0;
 
+static float phase = 0.0f;
+static float phase_inc = TWO_PI * TONE_FREQ / SAMPLE_RATE;
+
 /* Private function prototypes -----------------------------------------------*/
 static void Audio_SetHint(uint32_t Index);
-static uint32_t GetData(void *pdata, uint32_t offset, uint8_t *pbuf, uint32_t NbrOfData);
-AUDIO_ErrorTypeDef AUDIO_Start(uint32_t *psrc_address, uint32_t file_size);
+// static uint32_t GetData(void *pdata, uint32_t offset, uint8_t *pbuf, uint32_t NbrOfData);
+// AUDIO_ErrorTypeDef AUDIO_Start(uint32_t *psrc_address, uint32_t file_size);
+AUDIO_ErrorTypeDef AUDIO_Start(void);
+void GenerateTone(int16_t *dst, uint32_t samples);
 
 extern TS_Init_t hTS;
 
@@ -161,7 +172,8 @@ void AudioPlay_demo (void)
   using Transfer complete and/or half transfer complete interrupts callbacks
   (BSP_AUDIO_OUT_TransferComplete_CallBack() or BSP_AUDIO_OUT_HalfTransfer_CallBack()...
   */
-  AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
+  // AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
+  AUDIO_Start();
 
   /* Display the state on the screen */
   UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_WHITE);
@@ -271,7 +283,8 @@ void AudioPlay_demo (void)
                     AudioFreq_ptr++;
                     BSP_AUDIO_OUT_Stop(0);
                     BSP_AUDIO_OUT_SetSampleRate(0, *AudioFreq_ptr);
-                    AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
+                    // AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
+                    AUDIO_Start();
                   }
                   sprintf((char*)FreqStr, "FREQ:%lu", *AudioFreq_ptr);
                   UTIL_LCD_DisplayStringAt(0, LINE(7), (uint8_t *)FreqStr, CENTER_MODE);
@@ -310,7 +323,8 @@ void AudioPlay_demo (void)
               AudioFreq_ptr--;
               BSP_AUDIO_OUT_Stop(0);
               BSP_AUDIO_OUT_SetSampleRate(0, *AudioFreq_ptr);
-              AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
+              // AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
+              AUDIO_Start();
             }
             sprintf((char*)FreqStr, "FREQ:%lu", *AudioFreq_ptr);
             UTIL_LCD_DisplayStringAt(0, LINE(7), (uint8_t *)FreqStr, CENTER_MODE);
@@ -369,26 +383,43 @@ static void Audio_SetHint(uint32_t Index)
   * @param  None
   * @retval Audio error
   */
-AUDIO_ErrorTypeDef AUDIO_Start(uint32_t *psrc_address, uint32_t file_size)
+// AUDIO_ErrorTypeDef AUDIO_Start(uint32_t *psrc_address, uint32_t file_size)
+// {
+//   uint32_t bytesread;
+
+//   buffer_ctl.state = BUFFER_OFFSET_NONE;
+//   buffer_ctl.AudioFileSize = file_size;
+//   buffer_ctl.SrcAddress = psrc_address;
+
+//   bytesread = GetData( (void *)psrc_address,
+//                        0,
+//                        &buffer_ctl.buff[0],
+//                        AUDIO_BUFFER_SIZE);
+//   if(bytesread > 0)
+//   {
+//     BSP_AUDIO_OUT_Play(0,(uint8_t *)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE);
+//     audio_state = AUDIO_STATE_PLAYING;
+//     buffer_ctl.fptr = bytesread;
+//     return AUDIO_ERROR_NONE;
+//   }
+//   return AUDIO_ERROR_IO;
+// }
+AUDIO_ErrorTypeDef AUDIO_Start(void)
 {
-  uint32_t bytesread;
-
   buffer_ctl.state = BUFFER_OFFSET_NONE;
-  buffer_ctl.AudioFileSize = file_size;
-  buffer_ctl.SrcAddress = psrc_address;
 
-  bytesread = GetData( (void *)psrc_address,
-                       0,
-                       &buffer_ctl.buff[0],
-                       AUDIO_BUFFER_SIZE);
-  if(bytesread > 0)
-  {
-    BSP_AUDIO_OUT_Play(0,(uint8_t *)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE);
-    audio_state = AUDIO_STATE_PLAYING;
-    buffer_ctl.fptr = bytesread;
-    return AUDIO_ERROR_NONE;
-  }
-  return AUDIO_ERROR_IO;
+  GenerateTone((int16_t *)&buffer_ctl.buff[0],
+               AUDIO_BUFFER_SIZE / 4); // bytes → stereo samples
+
+  SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0],
+                          AUDIO_BUFFER_SIZE);
+
+  BSP_AUDIO_OUT_Play(0,
+                     (uint8_t *)&buffer_ctl.buff[0],
+                     AUDIO_BUFFER_SIZE);
+
+  audio_state = AUDIO_STATE_PLAYING;
+  return AUDIO_ERROR_NONE;
 }
 
 /**
@@ -396,20 +427,20 @@ AUDIO_ErrorTypeDef AUDIO_Start(uint32_t *psrc_address, uint32_t file_size)
   * @param  None
   * @retval None
   */
-static uint32_t GetData(void *pdata, uint32_t offset, uint8_t *pbuf, uint32_t NbrOfData)
-{
-  uint8_t *lptr = pdata;
-  uint32_t ReadDataNbr;
+// static uint32_t GetData(void *pdata, uint32_t offset, uint8_t *pbuf, uint32_t NbrOfData)
+// {
+//   uint8_t *lptr = pdata;
+//   uint32_t ReadDataNbr;
 
-  ReadDataNbr = 0;
-  while(((offset + ReadDataNbr) < buffer_ctl.AudioFileSize) && (ReadDataNbr < NbrOfData))
-  {
-    pbuf[ReadDataNbr]= lptr [offset + ReadDataNbr];
-    ReadDataNbr++;
-  }
+//   ReadDataNbr = 0;
+//   while(((offset + ReadDataNbr) < buffer_ctl.AudioFileSize) && (ReadDataNbr < NbrOfData))
+//   {
+//     pbuf[ReadDataNbr]= lptr [offset + ReadDataNbr];
+//     ReadDataNbr++;
+//   }
 
-  return ReadDataNbr;
-}
+//   return ReadDataNbr;
+// }
 
 /**
   * @brief  Manages Audio process.
@@ -418,52 +449,72 @@ static uint32_t GetData(void *pdata, uint32_t offset, uint8_t *pbuf, uint32_t Nb
   */
 uint8_t AUDIO_Process(void)
 {
-  uint32_t bytesread;
+  // uint32_t bytesread;
   AUDIO_ErrorTypeDef error_state = AUDIO_ERROR_NONE;
 
   switch(audio_state)
   {
   case AUDIO_STATE_PLAYING:
 
-    if(buffer_ctl.fptr >= buffer_ctl.AudioFileSize)
-    {
-      /* Play audio sample again ... */
-      buffer_ctl.fptr = 0;
-      error_state = AUDIO_ERROR_EOF;
-    }
+    // if(buffer_ctl.fptr >= buffer_ctl.AudioFileSize)
+    // {
+    //   /* Play audio sample again ... */
+    //   buffer_ctl.fptr = 0;
+    //   error_state = AUDIO_ERROR_EOF;
+    // }
 
     /* 1st half buffer played; so fill it and continue playing from bottom*/
-    if(buffer_ctl.state == BUFFER_OFFSET_HALF)
-    {
-      bytesread = GetData((void *)buffer_ctl.SrcAddress,
-                          buffer_ctl.fptr,
-                          &buffer_ctl.buff[0],
-                          AUDIO_BUFFER_SIZE /2);
+    // if(buffer_ctl.state == BUFFER_OFFSET_HALF)
+    // {
+    //   bytesread = GetData((void *)buffer_ctl.SrcAddress,
+    //                       buffer_ctl.fptr,
+    //                       &buffer_ctl.buff[0],
+    //                       AUDIO_BUFFER_SIZE /2);
 
-      if( bytesread >0)
-      {
-        buffer_ctl.state = BUFFER_OFFSET_NONE;
-        buffer_ctl.fptr += bytesread;
-              /* Clean Data Cache to update the content of the SRAM */
-      SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE/2);
-      }
+    //   if( bytesread >0)
+    //   {
+    //     buffer_ctl.state = BUFFER_OFFSET_NONE;
+    //     buffer_ctl.fptr += bytesread;
+    //           /* Clean Data Cache to update the content of the SRAM */
+    //   SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE/2);
+    //   }
+    // }
+    if (buffer_ctl.state == BUFFER_OFFSET_HALF)
+    {
+      GenerateTone((int16_t *)&buffer_ctl.buff[0],
+                  (AUDIO_BUFFER_SIZE / 2) / 4);
+
+      buffer_ctl.state = BUFFER_OFFSET_NONE;
+      SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0],
+                              AUDIO_BUFFER_SIZE / 2);
     }
+
 
     /* 2nd half buffer played; so fill it and continue playing from top */
-    if(buffer_ctl.state == BUFFER_OFFSET_FULL)
+    // if(buffer_ctl.state == BUFFER_OFFSET_FULL)
+    // {
+    //   bytesread = GetData((void *)buffer_ctl.SrcAddress,
+    //                       buffer_ctl.fptr,
+    //                       &buffer_ctl.buff[AUDIO_BUFFER_SIZE /2],
+    //                       AUDIO_BUFFER_SIZE /2);
+    //   if( bytesread > 0)
+    //   {
+    //     buffer_ctl.state = BUFFER_OFFSET_NONE;
+    //     buffer_ctl.fptr += bytesread;
+    //   /* Clean Data Cache to update the content of the SRAM */
+    //   SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[AUDIO_BUFFER_SIZE/2], AUDIO_BUFFER_SIZE/2);
+    //   }
+    // }
+    if (buffer_ctl.state == BUFFER_OFFSET_FULL)
     {
-      bytesread = GetData((void *)buffer_ctl.SrcAddress,
-                          buffer_ctl.fptr,
-                          &buffer_ctl.buff[AUDIO_BUFFER_SIZE /2],
-                          AUDIO_BUFFER_SIZE /2);
-      if( bytesread > 0)
-      {
-        buffer_ctl.state = BUFFER_OFFSET_NONE;
-        buffer_ctl.fptr += bytesread;
-      /* Clean Data Cache to update the content of the SRAM */
-      SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[AUDIO_BUFFER_SIZE/2], AUDIO_BUFFER_SIZE/2);
-      }
+      GenerateTone((int16_t *)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2],
+                  (AUDIO_BUFFER_SIZE / 2) / 4);
+
+      buffer_ctl.state = BUFFER_OFFSET_NONE;
+      SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2],
+                              AUDIO_BUFFER_SIZE / 2);
     }
+
     break;
 
   default:
@@ -539,3 +590,18 @@ void BSP_AUDIO_OUT_Error_CallBack(uint32_t Interface)
 /**
   * @}
   */
+
+void GenerateTone(int16_t *dst, uint32_t samples)
+{
+  for (uint32_t i = 0; i < samples; i++)
+  {
+    int16_t s = (int16_t)(AMPLITUDE * sinf(phase));
+    phase += phase_inc;
+    if (phase >= TWO_PI)
+      phase -= TWO_PI;
+
+    // stereo: L and R
+    dst[2*i]     = s;
+    dst[2*i + 1] = s;
+  }
+}
