@@ -176,40 +176,40 @@ void AudioPlay_demo (void)
   AUDIO_Start();
 
   /* Display the state on the screen */
-  UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_WHITE);
-  UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_DisplayStringAt(0, LINE(5), (uint8_t *)"       PLAYING...     ", CENTER_MODE);
-  sprintf((char*)VolStr, "VOL:%lu", uwVolume);
-  UTIL_LCD_DisplayStringAt(0,  LINE(6), (uint8_t *)VolStr, CENTER_MODE);
+  // UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_WHITE);
+  // UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_BLUE);
+  // UTIL_LCD_DisplayStringAt(0, LINE(5), (uint8_t *)"       PLAYING...     ", CENTER_MODE);
+  // sprintf((char*)VolStr, "VOL:%lu", uwVolume);
+  // UTIL_LCD_DisplayStringAt(0,  LINE(6), (uint8_t *)VolStr, CENTER_MODE);
 
-  sprintf((char*)FreqStr, "FREQ:%lu", *AudioFreq_ptr);
-  UTIL_LCD_DisplayStringAt(0, LINE(7), (uint8_t *)FreqStr, CENTER_MODE);
+  // sprintf((char*)FreqStr, "FREQ:%lu", *AudioFreq_ptr);
+  // UTIL_LCD_DisplayStringAt(0, LINE(7), (uint8_t *)FreqStr, CENTER_MODE);
 
-  UTIL_LCD_SetFont(&Font20);
+  // UTIL_LCD_SetFont(&Font20);
 
-  /*******VOL +******/
-  UTIL_LCD_DisplayStringAt(400,170,(uint8_t *)"VOL", LEFT_MODE);
-  UTIL_LCD_FillCircle(420,120, 25, UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_FillCircle(420,120, 23, UTIL_LCD_COLOR_WHITE);
-  UTIL_LCD_DisplayStringAt(413,113, (uint8_t *)"+", LEFT_MODE);
-  /*******VOL -******/
-  UTIL_LCD_FillCircle(420,220, 25, UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_FillCircle(420,220,  23, UTIL_LCD_COLOR_WHITE);
-  UTIL_LCD_DisplayStringAt(413,213, (uint8_t *)"-", LEFT_MODE);
-  /********PLAY/STOP***********/
-  UTIL_LCD_FillCircle(240,220, 37, UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_FillCircle(240,220, 35, UTIL_LCD_COLOR_WHITE);
-  UTIL_LCD_FillRect(227, 200, 10 , 45, UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_FillRect(244, 200, 10 , 45, UTIL_LCD_COLOR_BLUE);
-  /*******FREQ +******/
-  UTIL_LCD_DisplayStringAt(390,170, (uint8_t *)"FREQ",RIGHT_MODE );
-  UTIL_LCD_FillCircle(60,120, 25, UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_FillCircle(60,120,  23, UTIL_LCD_COLOR_WHITE);
-  UTIL_LCD_DisplayStringAt(409,113, (uint8_t *)"+", RIGHT_MODE);
-  /*******FREQ -******/
-  UTIL_LCD_FillCircle(60,220, 25, UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_FillCircle(60,220, 23, UTIL_LCD_COLOR_WHITE);
-  UTIL_LCD_DisplayStringAt(409,213, (uint8_t *)"-", RIGHT_MODE);
+  // /*******VOL +******/
+  // UTIL_LCD_DisplayStringAt(400,170,(uint8_t *)"VOL", LEFT_MODE);
+  // UTIL_LCD_FillCircle(420,120, 25, UTIL_LCD_COLOR_BLUE);
+  // UTIL_LCD_FillCircle(420,120, 23, UTIL_LCD_COLOR_WHITE);
+  // UTIL_LCD_DisplayStringAt(413,113, (uint8_t *)"+", LEFT_MODE);
+  // /*******VOL -******/
+  // UTIL_LCD_FillCircle(420,220, 25, UTIL_LCD_COLOR_BLUE);
+  // UTIL_LCD_FillCircle(420,220,  23, UTIL_LCD_COLOR_WHITE);
+  // UTIL_LCD_DisplayStringAt(413,213, (uint8_t *)"-", LEFT_MODE);
+  // /********PLAY/STOP***********/
+  // UTIL_LCD_FillCircle(240,220, 37, UTIL_LCD_COLOR_BLUE);
+  // UTIL_LCD_FillCircle(240,220, 35, UTIL_LCD_COLOR_WHITE);
+  // UTIL_LCD_FillRect(227, 200, 10 , 45, UTIL_LCD_COLOR_BLUE);
+  // UTIL_LCD_FillRect(244, 200, 10 , 45, UTIL_LCD_COLOR_BLUE);
+  // /*******FREQ +******/
+  // UTIL_LCD_DisplayStringAt(390,170, (uint8_t *)"FREQ",RIGHT_MODE );
+  // UTIL_LCD_FillCircle(60,120, 25, UTIL_LCD_COLOR_BLUE);
+  // UTIL_LCD_FillCircle(60,120,  23, UTIL_LCD_COLOR_WHITE);
+  // UTIL_LCD_DisplayStringAt(409,113, (uint8_t *)"+", RIGHT_MODE);
+  // /*******FREQ -******/
+  // UTIL_LCD_FillCircle(60,220, 25, UTIL_LCD_COLOR_BLUE);
+  // UTIL_LCD_FillCircle(60,220, 23, UTIL_LCD_COLOR_WHITE);
+  // UTIL_LCD_DisplayStringAt(409,213, (uint8_t *)"-", RIGHT_MODE);
 
   /* IMPORTANT:
   AUDIO_Process() is called by the SysTick Handler, as it should be called
@@ -220,121 +220,121 @@ void AudioPlay_demo (void)
   {
     /* IMPORTANT: AUDIO_Process() should be called within a periodic process */
     AUDIO_Process();
-    BSP_TS_GetState(0, &TS_State);
-    if(TS_State.TouchDetected)
-    {
-      x1 = TS_State.TouchX;
-      y1 = TS_State.TouchY;
-      if((y1<255)&&(y1>185))
-      {
-        if((205<x1)&&(x1<275))
-        {
-          /**Audio PLAY or AUDIO Resume*/
-          BSP_AUDIO_OUT_GetState(0,&AudioState);
+    // BSP_TS_GetState(0, &TS_State);
+    // if(TS_State.TouchDetected)
+    // {
+    //   x1 = TS_State.TouchX;
+    //   y1 = TS_State.TouchY;
+    //   if((y1<255)&&(y1>185))
+    //   {
+    //     if((205<x1)&&(x1<275))
+    //     {
+    //       /**Audio PLAY or AUDIO Resume*/
+    //       BSP_AUDIO_OUT_GetState(0,&AudioState);
 
-          if(AudioState==AUDIO_OUT_STATE_PLAYING)
-          {
-            BSP_AUDIO_OUT_Pause(0);
-            UTIL_LCD_FillCircle(240,220, 35, UTIL_LCD_COLOR_WHITE);
-            UTIL_LCD_FillPolygon(Points2, 3, UTIL_LCD_COLOR_BLUE);
-            HAL_Delay(250);
-          }
-          else
-          {
-            BSP_AUDIO_OUT_Resume(0);
-            UTIL_LCD_FillCircle(240,220, 35, UTIL_LCD_COLOR_WHITE);
-            UTIL_LCD_FillRect(227, 200, 10 , 45, UTIL_LCD_COLOR_BLUE);
-            UTIL_LCD_FillRect(244, 200, 10 , 45, UTIL_LCD_COLOR_BLUE);
-            HAL_Delay(250);
-          }
-        }
-        else
-        {
-          if((y1<245)&&(y1>195))
-          {
-            if((395<x1)&&(x1<445))
-            {
-              /**VOL -*/
-              if (uwVolume > 5)
-              {
-                uwVolume -= 5;
-              }
-              else
-              {
-                uwVolume = 0;
-              }
+    //       if(AudioState==AUDIO_OUT_STATE_PLAYING)
+    //       {
+    //         BSP_AUDIO_OUT_Pause(0);
+    //         UTIL_LCD_FillCircle(240,220, 35, UTIL_LCD_COLOR_WHITE);
+    //         UTIL_LCD_FillPolygon(Points2, 3, UTIL_LCD_COLOR_BLUE);
+    //         HAL_Delay(250);
+    //       }
+    //       else
+    //       {
+    //         BSP_AUDIO_OUT_Resume(0);
+    //         UTIL_LCD_FillCircle(240,220, 35, UTIL_LCD_COLOR_WHITE);
+    //         UTIL_LCD_FillRect(227, 200, 10 , 45, UTIL_LCD_COLOR_BLUE);
+    //         UTIL_LCD_FillRect(244, 200, 10 , 45, UTIL_LCD_COLOR_BLUE);
+    //         HAL_Delay(250);
+    //       }
+    //     }
+    //     else
+    //     {
+    //       if((y1<245)&&(y1>195))
+    //       {
+    //         if((395<x1)&&(x1<445))
+    //         {
+    //           /**VOL -*/
+    //           if (uwVolume > 5)
+    //           {
+    //             uwVolume -= 5;
+    //           }
+    //           else
+    //           {
+    //             uwVolume = 0;
+    //           }
 
-              sprintf((char*)VolStr, "VOL:%lu", uwVolume);
-              BSP_AUDIO_OUT_SetVolume(0, uwVolume);
-              UTIL_LCD_DisplayStringAt(0,  LINE(6), (uint8_t *)VolStr, CENTER_MODE);
-              HAL_Delay(250);
-            }
-            else
-            {
-              if((35<x1)&&(x1<85))
-              {
-                /*FREQ -*/
+    //           sprintf((char*)VolStr, "VOL:%lu", uwVolume);
+    //           BSP_AUDIO_OUT_SetVolume(0, uwVolume);
+    //           UTIL_LCD_DisplayStringAt(0,  LINE(6), (uint8_t *)VolStr, CENTER_MODE);
+    //           HAL_Delay(250);
+    //         }
+    //         else
+    //         {
+    //           if((35<x1)&&(x1<85))
+    //           {
+    //             /*FREQ -*/
 
-                if((35<x1)&&(x1<85))
-                {
-                  /*FREQ +*/
-                  if (*AudioFreq_ptr != 8000)
-                  {
-                    AudioFreq_ptr++;
-                    BSP_AUDIO_OUT_Stop(0);
-                    BSP_AUDIO_OUT_SetSampleRate(0, *AudioFreq_ptr);
-                    // AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
-                    AUDIO_Start();
-                  }
-                  sprintf((char*)FreqStr, "FREQ:%lu", *AudioFreq_ptr);
-                  UTIL_LCD_DisplayStringAt(0, LINE(7), (uint8_t *)FreqStr, CENTER_MODE);
-                  HAL_Delay(250);
-                }
-              }
-            }
-          }
-        }
-      }
-      else
-      {
+    //             if((35<x1)&&(x1<85))
+    //             {
+    //               /*FREQ +*/
+    //               if (*AudioFreq_ptr != 8000)
+    //               {
+    //                 AudioFreq_ptr++;
+    //                 BSP_AUDIO_OUT_Stop(0);
+    //                 BSP_AUDIO_OUT_SetSampleRate(0, *AudioFreq_ptr);
+    //                 // AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
+    //                 AUDIO_Start();
+    //               }
+    //               sprintf((char*)FreqStr, "FREQ:%lu", *AudioFreq_ptr);
+    //               UTIL_LCD_DisplayStringAt(0, LINE(7), (uint8_t *)FreqStr, CENTER_MODE);
+    //               HAL_Delay(250);
+    //             }
+    //           }
+    //         }
+    //       }
+    //     }
+    //   }
+    //   else
+    //   {
 
-        if((95<y1)&&(y1<145))
-        {
-          if((395<x1)&&(x1<445))
-          {
-            /**VOL +*/
-            if (uwVolume < 95)
-            {
-              uwVolume += 5;
-            }
-            else
-            {
-              uwVolume = 100;
-            }
-            sprintf((char*)VolStr, "VOL:%lu", uwVolume);
-            BSP_AUDIO_OUT_SetVolume(0, uwVolume);
-            UTIL_LCD_DisplayStringAt(0,  LINE(6), (uint8_t *)VolStr, CENTER_MODE);
-            HAL_Delay(250);
-          }
-          else
-          {
-            if (*AudioFreq_ptr != 96000)
-            {
-              AudioFreq_ptr--;
-              BSP_AUDIO_OUT_Stop(0);
-              BSP_AUDIO_OUT_SetSampleRate(0, *AudioFreq_ptr);
-              // AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
-              AUDIO_Start();
-            }
-            sprintf((char*)FreqStr, "FREQ:%lu", *AudioFreq_ptr);
-            UTIL_LCD_DisplayStringAt(0, LINE(7), (uint8_t *)FreqStr, CENTER_MODE);
-            HAL_Delay(250);
-          }
-        }
-        else
-        {}
-      }
-    }
+    //     if((95<y1)&&(y1<145))
+    //     {
+    //       if((395<x1)&&(x1<445))
+    //       {
+    //         /**VOL +*/
+    //         if (uwVolume < 95)
+    //         {
+    //           uwVolume += 5;
+    //         }
+    //         else
+    //         {
+    //           uwVolume = 100;
+    //         }
+    //         sprintf((char*)VolStr, "VOL:%lu", uwVolume);
+    //         BSP_AUDIO_OUT_SetVolume(0, uwVolume);
+    //         UTIL_LCD_DisplayStringAt(0,  LINE(6), (uint8_t *)VolStr, CENTER_MODE);
+    //         HAL_Delay(250);
+    //       }
+    //       else
+    //       {
+    //         if (*AudioFreq_ptr != 96000)
+    //         {
+    //           AudioFreq_ptr--;
+    //           BSP_AUDIO_OUT_Stop(0);
+    //           BSP_AUDIO_OUT_SetSampleRate(0, *AudioFreq_ptr);
+    //           // AUDIO_Start((uint32_t *)AUDIO_SRC_FILE_ADDRESS, (uint32_t)AUDIO_FILE_SIZE);
+    //           AUDIO_Start();
+    //         }
+    //         sprintf((char*)FreqStr, "FREQ:%lu", *AudioFreq_ptr);
+    //         UTIL_LCD_DisplayStringAt(0, LINE(7), (uint8_t *)FreqStr, CENTER_MODE);
+    //         HAL_Delay(250);
+    //       }
+    //     }
+    //     else
+    //     {}
+    //   }
+    // }
     if (CheckForUserInput() > 0)
     {
       ButtonState = 0;

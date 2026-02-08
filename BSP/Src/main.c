@@ -53,7 +53,7 @@ BSP_DemoTypedef  BSP_examples[]=
   // {Touchscreen_demo2, "TOUCHSCREEN DEMO2", 0},
   // {LCD_demo, "LCD", 0},
   {AudioPlay_demo, "AUDIO PLAY", 0},
-  {AudioRecord_demo, "AUDIO RECORD", 0},
+  // {AudioRecord_demo, "AUDIO RECORD", 0},
   // {MMC_demo, "MMC", 0},
   // {SDRAM_demo, "SDRAM", 0},
   // {SDRAM_DMA_demo, "SDRAM MDMA", 0}
@@ -102,26 +102,27 @@ int main(void)
 
   BSP_LCD_Init(0, LCD_ORIENTATION_LANDSCAPE);
   UTIL_LCD_SetFuncDriver(&LCD_Driver);
-  Display_DemoDescription();
+  // Display_DemoDescription();
+  BSP_examples[DemoIndex++].DemoFunc();
 
   /* Wait For User inputs */
   while (1)
   {
 
-    if(ButtonState == 1)
-    {
-      HAL_Delay(400);
-      ButtonState = 0;
-      BSP_examples[DemoIndex++].DemoFunc();
+    // if(ButtonState == 1)
+    // {
+    //   HAL_Delay(400);
+    //   ButtonState = 0;
+    //   BSP_examples[DemoIndex++].DemoFunc();
 
-      HAL_Delay(100);
+    //   HAL_Delay(100);
 
-      if(DemoIndex >= COUNT_OF_EXAMPLE(BSP_examples))
-      {
-        DemoIndex = 0;
-      }
-      Display_DemoDescription();
-    }
+    //   if(DemoIndex >= COUNT_OF_EXAMPLE(BSP_examples))
+    //   {
+    //     DemoIndex = 0;
+    //   }
+    //   Display_DemoDescription();
+    // }
   }
 }
 /**
