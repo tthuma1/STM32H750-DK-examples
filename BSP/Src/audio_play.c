@@ -99,7 +99,7 @@ static void Audio_SetHint(uint32_t Index);
 AUDIO_ErrorTypeDef AUDIO_Start(void);
 void GenerateTone(int16_t *dst, uint32_t samples);
 
-extern TS_Init_t hTS;
+// extern TS_Init_t hTS;
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -111,17 +111,17 @@ extern TS_Init_t hTS;
 void AudioPlay_demo (void)
 {
   uint32_t *AudioFreq_ptr;
-  uint32_t y_size,x_size;
-  uint16_t x1, y1;
- TS_State_t  TS_State;
- uint32_t AudioState;
+  // uint32_t y_size,x_size;
+  // uint16_t x1, y1;
+//  TS_State_t  TS_State;
+  uint32_t AudioState;
 
 
-  BSP_LCD_GetXSize(0, &x_size);
-  BSP_LCD_GetYSize(0, &y_size);
+  // BSP_LCD_GetXSize(0, &x_size);
+  // BSP_LCD_GetYSize(0, &y_size);
 
   AudioFreq_ptr = &AudioFreq[0]; /*96K*/
-  ButtonState = 0;
+  // ButtonState = 0;
 
    uint8_t VolStr[256] = {0};
   uint8_t FreqStr[256] = {0};
@@ -130,25 +130,25 @@ void AudioPlay_demo (void)
   uwPauseEnabledStatus = 1; /* 0 when audio is running, 1 when Pause is on */
   uwVolume = 40;
 
-  Audio_SetHint(0);
-  UTIL_LCD_SetFont(&Font20);
+  // Audio_SetHint(0);
+  // UTIL_LCD_SetFont(&Font20);
 
-  ButtonState = 0;
+  // ButtonState = 0;
 
-  hTS.Width = x_size;
-  hTS.Height = y_size;
-  hTS.Orientation =TS_SWAP_XY ;
-  hTS.Accuracy = 5;
+  // hTS.Width = x_size;
+  // hTS.Height = y_size;
+  // hTS.Orientation =TS_SWAP_XY ;
+  // hTS.Accuracy = 5;
 
   /* Touchscreen initialization */
-  ts_status = BSP_TS_Init(0, &hTS);
-  if (ts_status != BSP_ERROR_NONE)
-  {
-    UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_WHITE);
-    UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_RED);
-    UTIL_LCD_DisplayStringAt(0, y_size - 95, (uint8_t *)"ERROR", CENTER_MODE);
-    UTIL_LCD_DisplayStringAt(0, y_size - 80, (uint8_t *)"Touch Screen cannot be initialized", CENTER_MODE);
-  }
+  // ts_status = BSP_TS_Init(0, &hTS);
+  // if (ts_status != BSP_ERROR_NONE)
+  // {
+  //   UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_WHITE);
+  //   UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_RED);
+  //   UTIL_LCD_DisplayStringAt(0, y_size - 95, (uint8_t *)"ERROR", CENTER_MODE);
+  //   UTIL_LCD_DisplayStringAt(0, y_size - 80, (uint8_t *)"Touch Screen cannot be initialized", CENTER_MODE);
+  // }
 
 
   AudioPlayInit.Device = AUDIO_OUT_DEVICE_HEADPHONE;
@@ -160,10 +160,6 @@ void AudioPlay_demo (void)
 
   if(BSP_AUDIO_OUT_Init(0, &AudioPlayInit) != 0)
   {
-    UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_WHITE);
-    UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_RED);
-    UTIL_LCD_DisplayStringAt(0, y_size - 95, (uint8_t *)"  AUDIO CODEC  FAIL ", CENTER_MODE);
-    UTIL_LCD_DisplayStringAt(0, y_size - 80, (uint8_t *)" Try to reset board ", CENTER_MODE);
   }
 
   /*
@@ -337,7 +333,7 @@ void AudioPlay_demo (void)
     // }
     if (CheckForUserInput() > 0)
     {
-      ButtonState = 0;
+      // ButtonState = 0;
       BSP_AUDIO_OUT_Stop(0);
       BSP_AUDIO_OUT_DeInit(0);
       return;
