@@ -36,16 +36,16 @@
 /*Since SysTick is set to 1ms (unless to set it quicker) */
 /* to run up to 48khz, a buffer around 1000 (or more) is requested*/
 /* to run up to 96khz, a buffer around 2000 (or more) is requested*/
-#define AUDIO_DEFAULT_VOLUME    70
+// #define AUDIO_DEFAULT_VOLUME    70
 
 /* Audio file size and start address are defined here since the audio file is
    stored in Flash memory as a constant table of 16-bit data */
-#define AUDIO_START_OFFSET_ADDRESS    0            /* Offset relative to audio file header size */
+// #define AUDIO_START_OFFSET_ADDRESS    0            /* Offset relative to audio file header size */
 #define AUDIO_BUFFER_SIZE            2048
 
 /* Audio file size and start address are defined here since the audio file is
    stored in Flash memory as a constant table of 16-bit data */
-#define AUDIO_START_OFFSET_ADDRESS    0            /* Offset relative to audio file header size */
+// #define AUDIO_START_OFFSET_ADDRESS    0            /* Offset relative to audio file header size */
 
 #define SAMPLE_RATE     48000.0f
 #define TONE_FREQ       100.0f
@@ -75,19 +75,19 @@ typedef struct {
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
-uint32_t bytesread;
+// uint32_t bytesread;
 ALIGN_32BYTES (static AUDIO_BufferTypeDef  buffer_ctl);
 static AUDIO_PLAYBACK_StateTypeDef  audio_state;
 __IO uint32_t uwVolume = 20;
-uint8_t ReadVol = 0;
+// uint8_t ReadVol = 0;
 __IO uint32_t uwPauseEnabledStatus = 0;
-uint32_t updown = 1;
+// uint32_t updown = 1;
 
 uint32_t AudioFreq[8] = {96000, 48000, 44100, 32000, 22050, 16000, 11025, 8000};
 
 BSP_AUDIO_Init_t AudioPlayInit;
 
-uint32_t OutputDevice = 0;
+// uint32_t OutputDevice = 0;
 
 static float phase = 0.0f;
 static float phase_inc = TWO_PI * TONE_FREQ / SAMPLE_RATE;
@@ -138,7 +138,7 @@ void main (void)
   // uint32_t y_size,x_size;
   // uint16_t x1, y1;
 //  TS_State_t  TS_State;
-  uint32_t AudioState;
+  // uint32_t AudioState;
 
 
   // BSP_LCD_GetXSize(0, &x_size);
