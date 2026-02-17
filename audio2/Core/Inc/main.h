@@ -28,11 +28,11 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32h7xx_hal.h"
-#include "stm32h750b_discovery.h"
-#include "stm32h750b_discovery_audio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "stm32h750b_discovery.h"
+#include "stm32h750b_discovery_audio.h"
 
 /* USER CODE END Includes */
 
