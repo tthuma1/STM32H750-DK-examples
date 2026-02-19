@@ -66,6 +66,7 @@ void SystemClock_Config(void);
 static void MPU_Config(void);
 static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
+static void CPU_CACHE_Enable(void);
 
 AUDIO_ErrorTypeDef AUDIO_Start(void);
 uint8_t AUDIO_Process(void);
@@ -97,7 +98,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  CPU_CACHE_Enable();
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -331,6 +332,20 @@ void GenerateTone(int16_t *dst, uint32_t samples)
     dst[2*i]     = s;
     dst[2*i + 1] = s;
   }
+}
+
+/**
+  * @brief  CPU L1-Cache enable.
+  * @param  None
+  * @retval None
+  */
+static void CPU_CACHE_Enable(void)
+{
+  /* Enable I-Cache */
+  SCB_EnableICache();
+
+  /* Enable D-Cache */
+  SCB_EnableDCache();
 }
 
 /* USER CODE END 4 */
