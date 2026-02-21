@@ -19,7 +19,6 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "stlogo.h"
 
 /** @addtogroup STM32H7xx_HAL_Examples
   * @{
@@ -38,8 +37,6 @@
 /* Initial volume level (from 0% (Mute) to 100% (Max)) */
 /* Private function prototypes -----------------------------------------------*/
 static void SystemClock_Config(void);
-static void MPU_Config(void);
-static void CPU_CACHE_Enable(void);
 
 typedef enum
 {
@@ -93,12 +90,6 @@ int main(void)
   /* System Init, System clock, voltage scaling and L1-Cache configuration are done by CPU1 (Cortex-M7)
      in the meantime Domain D2 is put in STOP mode(Cortex-M4 in deep-sleep)
   */
-
-  /* Configure the MPU attributes as Write Through */
-  MPU_Config();
-
-  /* Enable the CPU Cache */
-  CPU_CACHE_Enable();
 
   /* STM32H7xx HAL library initialization:
        - Systick timer is configured by default as source of time base, but user
@@ -267,52 +258,6 @@ void Error_Handler(void)
 }
 
 /**
-  * @brief  Configure the MPU attributes
-  * @param  None
-  * @retval None
-  */
-static void MPU_Config(void)
-{
-    MPU_Region_InitTypeDef MPU_InitStruct;
-
-  /* Disable the MPU */
-  HAL_MPU_Disable();
-
-  /* Configure the MPU attributes as WT for SDRAM */
-  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
-  MPU_InitStruct.BaseAddress = SDRAM_DEVICE_ADDR;
-  MPU_InitStruct.Size = MPU_REGION_SIZE_16MB;
-  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
-  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
-  MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
-  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
-  MPU_InitStruct.Number = MPU_REGION_NUMBER3;
-  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
-  MPU_InitStruct.SubRegionDisable = 0x00;
-  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
-
-  HAL_MPU_ConfigRegion(&MPU_InitStruct);
-
-  /* Enable the MPU */
-  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
-
-}
-
-/**
-  * @brief  CPU L1-Cache enable.
-  * @param  None
-  * @retval None
-  */
-static void CPU_CACHE_Enable(void)
-{
-  /* Enable I-Cache */
-  SCB_EnableICache();
-
-  /* Enable D-Cache */
-  SCB_EnableDCache();
-}
-
-/**
   * @}
   */
 
@@ -329,13 +274,7 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
 {
   if(Instance == 1U)
   {
-        /* Invalidate Data Cache to get the updated content of the SRAM*/
-    SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE/2], AUDIO_IN_PDM_BUFFER_SIZE*2);
-
     BSP_AUDIO_IN_PDMToPCM(Instance, (uint16_t*)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE/2], &RecPlayback[playbackPtr]);
-
-    /* Clean Data Cache to update the content of the SRAM */
-    SCB_CleanDCache_by_Addr((uint32_t*)&RecPlayback[playbackPtr], AUDIO_IN_PDM_BUFFER_SIZE/4);
 
     playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE/4/2;
     if(playbackPtr >= AUDIO_BUFF_SIZE)
@@ -356,13 +295,7 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
 {
   if(Instance == 1U)
   {
-        /* Invalidate Data Cache to get the updated content of the SRAM*/
-    SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[0], AUDIO_IN_PDM_BUFFER_SIZE*2);
-
     BSP_AUDIO_IN_PDMToPCM(Instance, (uint16_t*)&recordPDMBuf[0], &RecPlayback[playbackPtr]);
-
-    /* Clean Data Cache to update the content of the SRAM */
-    SCB_CleanDCache_by_Addr((uint32_t*)&RecPlayback[playbackPtr], AUDIO_IN_PDM_BUFFER_SIZE/4);
 
     playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE/4/2;
     if(playbackPtr >= AUDIO_BUFF_SIZE)
