@@ -94,34 +94,34 @@ int main(void)
   /* When system initialization is finished, Cortex-M7 could wakeup (when needed) the Cortex-M4  by means of
      HSEM notification or by any D2 wakeup source (SEV,EXTI..)   */
 
-  BSP_LED_Init(LED_GREEN);
-  BSP_LED_Init(LED_RED);
+  // BSP_LED_Init(LED_GREEN);
+  // BSP_LED_Init(LED_RED);
 
-  /* Configure the User push-button in EXTI Mode */
-  BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
+  // /* Configure the User push-button in EXTI Mode */
+  // BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
-  BSP_LCD_Init(0, LCD_ORIENTATION_LANDSCAPE);
-  UTIL_LCD_SetFuncDriver(&LCD_Driver);
-  Display_DemoDescription();
+  // BSP_LCD_Init(0, LCD_ORIENTATION_LANDSCAPE);
+  // UTIL_LCD_SetFuncDriver(&LCD_Driver);
+  // Display_DemoDescription();
 
   /* Wait For User inputs */
   while (1)
   {
 
-    if(ButtonState == 1)
-    {
-      HAL_Delay(400);
-      ButtonState = 0;
+    // if(ButtonState == 1)
+    // {
+    //   HAL_Delay(400);
+    //   ButtonState = 0;
       BSP_examples[DemoIndex++].DemoFunc();
 
-      HAL_Delay(100);
+    //   HAL_Delay(100);
 
-      if(DemoIndex >= COUNT_OF_EXAMPLE(BSP_examples))
-      {
-        DemoIndex = 0;
-      }
-      Display_DemoDescription();
-    }
+    //   if(DemoIndex >= COUNT_OF_EXAMPLE(BSP_examples))
+    //   {
+    //     DemoIndex = 0;
+    //   }
+    //   Display_DemoDescription();
+    // }
   }
 }
 /**
@@ -219,103 +219,16 @@ static void SystemClock_Config(void)
 }
 
 /**
-  * @brief  Display main demo messages
-  * @param  None
-  * @retval None
-  */
-static void Display_DemoDescription(void)
-{
-  char desc[64];
-  uint32_t x_size;
-  uint32_t y_size;
-
-  UTIL_LCD_SetFont(&UTIL_LCD_DEFAULT_FONT);
-
-  /* Clear the LCD */
-  UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_WHITE);
-  UTIL_LCD_Clear(UTIL_LCD_COLOR_WHITE);
-
-  /* Set the LCD Text Color */
-  UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_DARKBLUE);
-
-  /* Display LCD messages */
-  UTIL_LCD_DisplayStringAt(0, 10, (uint8_t *)"STM32H750B BSP", CENTER_MODE);
-  UTIL_LCD_DisplayStringAt(0, 35, (uint8_t *)"Drivers examples", CENTER_MODE);
-
-  BSP_LCD_GetXSize(0, &x_size);
-  BSP_LCD_GetYSize(0, &y_size);
-
-  /* Draw Bitmap */
-  UTIL_LCD_DrawBitmap((x_size - 80)/2, 65, (uint8_t *)stlogo);
-
-  UTIL_LCD_SetFont(&Font12);
-  UTIL_LCD_DisplayStringAt(0, y_size - 20, (uint8_t *)"Copyright (c) STMicroelectronics 2019", CENTER_MODE);
-
-  UTIL_LCD_SetFont(&Font16);
-  BSP_LCD_FillRect(0, 0, y_size/2 - 15, x_size, 100, UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_WHITE);
-  UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_BLUE);
-  UTIL_LCD_DisplayStringAt(0, y_size / 2 , (uint8_t *)"Press TAMPER button to start :", CENTER_MODE);
-  sprintf(desc,"%s example", BSP_examples[DemoIndex].DemoName);
-  UTIL_LCD_DisplayStringAt(0, y_size/2 + 15, (uint8_t *)desc, CENTER_MODE);
-}
-
-/**
-  * @brief  Check for user input
-  * @param  None
-  * @retval Input state (1 : active / 0 : Inactive)
-  */
-uint8_t CheckForUserInput(void)
-{
-  return ButtonState;
-}
-/**
-* @brief  EXTI line detection callbacks.
-* @param  GPIO_Pin: Specifies the pins connected EXTI line
-* @retval None
-*/
-void BSP_PB_Callback(Button_TypeDef Button)
-{
- if(Button == BUTTON_USER)
-  {
-    ButtonState = 1;
-  }
-}
-
-/**
   * @brief  This function is executed in case of error occurrence.
   * @param  None
   * @retval None
   */
 void Error_Handler(void)
 {
-  /* Turn LED REDon */
-  BSP_LED_On(LED_RED);
   while(1)
   {
   }
 }
-
-#ifdef USE_FULL_ASSERT
-
-/**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t* file, uint32_t line)
-{
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-
-  /* Infinite loop */
-  while (1)
-  {
-  }
-}
-#endif /* USE_FULL_ASSERT */
 
 /**
   * @brief  Configure the MPU attributes
