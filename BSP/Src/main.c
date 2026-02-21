@@ -62,21 +62,16 @@ ALIGN_32BYTES (uint16_t recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE]);
   ALIGN_32BYTES (uint16_t recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE]) __attribute__((section(".RAM_D3")));
 #endif
 
-ALIGN_32BYTES (uint16_t  RecPlayback[AUDIO_BUFF_SIZE]);
-ALIGN_32BYTES (uint16_t  PlaybackBuffer[2*AUDIO_BUFF_SIZE]);
+ALIGN_32BYTES (uint16_t RecPlayback[AUDIO_BUFF_SIZE]) __attribute__((section(".RAM_D3")));
+ALIGN_32BYTES (uint16_t PlaybackBuffer[2*AUDIO_BUFF_SIZE]) __attribute__((section(".RAM_D3")));
 
 /* Pointer to record_data */
 uint32_t playbackPtr;
-
-// uint32_t  InState = 0;
 
 uint32_t AudioBufferOffset;
 BSP_AUDIO_Init_t  AudioInInit;
 BSP_AUDIO_Init_t  AudioOutInit;
 BSP_AUDIO_Init_t AnalogInInit;
-
-// static uint32_t AudioFreq[9] = {8000 ,11025, 16000, 22050, 32000, 44100, 48000, 96000, 192000};
-// uint32_t *AudioFreq_ptr;
 
 /* Private functions ---------------------------------------------------------*/
 
