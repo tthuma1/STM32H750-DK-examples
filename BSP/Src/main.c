@@ -32,6 +32,40 @@
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
+/* ===================== DSP CONFIG ===================== */
+#define DSP_ENABLE_LPF        0
+#define DSP_ENABLE_HPF        1
+#define DSP_ENABLE_REVERB     0
+#define DSP_ENABLE_FIR        0
+
+#define SAMPLE_RATE           16000.0f
+#define TWO_PI                6.28318530718f
+
+/* ---------- 1st order IIR state ---------- */
+static float lpf_yL = 0, lpf_yR = 0;
+static float hpf_yL = 0, hpf_yR = 0;
+static float hpf_xL = 0, hpf_xR = 0;
+
+/* ---------- Reverb (simple feedback delay) ---------- */
+#define REVERB_DELAY_SAMPLES  800   // 50ms @16kHz
+#define REVERB_FEEDBACK       0.4f
+
+static float reverbBufL[REVERB_DELAY_SAMPLES];
+static float reverbBufR[REVERB_DELAY_SAMPLES];
+static uint32_t reverbIndex = 0;
+
+/* ---------- FIR Convolution ---------- */
+#define FIR_TAPS 16
+static const float firCoeff[FIR_TAPS] =
+{
+  -0.01f, -0.02f, 0.0f, 0.08f,
+   0.2f,  0.3f,  0.2f, 0.08f,
+   0.0f, -0.02f, -0.01f, 0.0f,
+   0.0f,  0.0f,  0.0f,  0.0f
+};
+
+static float firStateL[FIR_TAPS] = {0};
+static float firStateR[FIR_TAPS] = {0};
 
 /* Volume of the audio playback */
 /* Initial volume level (from 0% (Mute) to 100% (Max)) */
@@ -39,6 +73,7 @@
 static void SystemClock_Config(void);
 static void MPU_Config(void);
 static void CPU_CACHE_Enable(void);
+static void DSP_Process(int16_t*, uint32_t);
 
 typedef enum
 {
@@ -327,6 +362,9 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
     SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE/2], AUDIO_IN_PDM_BUFFER_SIZE*2);
 
     BSP_AUDIO_IN_PDMToPCM(Instance, (uint16_t*)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE/2], &RecPlayback[playbackPtr]);
+    // DSP call
+    uint32_t pcmSamples = AUDIO_IN_PDM_BUFFER_SIZE/4; 
+    DSP_Process((int16_t*)&RecPlayback[playbackPtr], pcmSamples);
 
     /* Clean Data Cache to update the content of the SRAM */
     SCB_CleanDCache_by_Addr((uint32_t*)&RecPlayback[playbackPtr], AUDIO_IN_PDM_BUFFER_SIZE/4);
@@ -354,6 +392,9 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
     SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[0], AUDIO_IN_PDM_BUFFER_SIZE*2);
 
     BSP_AUDIO_IN_PDMToPCM(Instance, (uint16_t*)&recordPDMBuf[0], &RecPlayback[playbackPtr]);
+    // DSP call
+    uint32_t pcmSamples = AUDIO_IN_PDM_BUFFER_SIZE/4; 
+    DSP_Process((int16_t*)&RecPlayback[playbackPtr], pcmSamples);
 
     /* Clean Data Cache to update the content of the SRAM */
     SCB_CleanDCache_by_Addr((uint32_t*)&RecPlayback[playbackPtr], AUDIO_IN_PDM_BUFFER_SIZE/4);
@@ -368,4 +409,77 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
   {
     AudioBufferOffset = BUFFER_OFFSET_HALF;
   }
+}
+
+static void DSP_Process(int16_t *buffer, uint32_t samples)
+{
+    float fc = 10000.0f;   // cutoff 2kHz
+    float alpha_lpf = (2.0f * 3.14159f * fc) /
+                      (2.0f * 3.14159f * fc + SAMPLE_RATE);
+
+    float alpha_hpf = SAMPLE_RATE /
+                      (2.0f * 3.14159f * fc + SAMPLE_RATE);
+
+    for(uint32_t i = 0; i < samples; i += 2) // stereo
+    {
+        float xL = buffer[i];
+        float xR = buffer[i+1];
+
+#if DSP_ENABLE_LPF
+        lpf_yL = lpf_yL + alpha_lpf * (xL - lpf_yL);
+        lpf_yR = lpf_yR + alpha_lpf * (xR - lpf_yR);
+        xL = lpf_yL;
+        xR = lpf_yR;
+#endif
+
+#if DSP_ENABLE_HPF
+        float yL = alpha_hpf * (hpf_yL + xL - hpf_xL);
+        float yR = alpha_hpf * (hpf_yR + xR - hpf_xR);
+        hpf_xL = xL; hpf_xR = xR;
+        hpf_yL = yL; hpf_yR = yR;
+        xL = yL;
+        xR = yR;
+#endif
+
+#if DSP_ENABLE_REVERB
+        float delayedL = reverbBufL[reverbIndex];
+        float delayedR = reverbBufR[reverbIndex];
+
+        reverbBufL[reverbIndex] = xL + delayedL * REVERB_FEEDBACK;
+        reverbBufR[reverbIndex] = xR + delayedR * REVERB_FEEDBACK;
+
+        xL += delayedL;
+        xR += delayedR;
+
+        reverbIndex++;
+        if(reverbIndex >= REVERB_DELAY_SAMPLES)
+            reverbIndex = 0;
+#endif
+
+#if DSP_ENABLE_FIR
+        /* Shift history */
+        memmove(&firStateL[1], &firStateL[0], (FIR_TAPS-1)*sizeof(float));
+        memmove(&firStateR[1], &firStateR[0], (FIR_TAPS-1)*sizeof(float));
+        firStateL[0] = xL;
+        firStateR[0] = xR;
+
+        float accL = 0, accR = 0;
+        for(int k=0;k<FIR_TAPS;k++)
+        {
+            accL += firCoeff[k]*firStateL[k];
+            accR += firCoeff[k]*firStateR[k];
+        }
+        xL = accL;
+        xR = accR;
+#endif
+
+        /* Saturation */
+        if(xL > 32767) xL = 32767;
+        if(xL < -32768) xL = -32768;
+        if(xR > 32767) xR = 32767;
+        if(xR < -32768) xR = -32768;
+
+        buffer[i]   = (int16_t)xL;
+        buffer[i+1] = (int16_t)xR;
+    }
 }
