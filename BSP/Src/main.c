@@ -35,39 +35,39 @@
 /* Private variables ---------------------------------------------------------*/
 /* ===================== DSP CONFIG ===================== */
 // **** start no CMSIS DSP stuff ****
-// #define DSP_ENABLE_LPF        0
-// #define DSP_ENABLE_HPF        1
-// #define DSP_ENABLE_REVERB     0
-// #define DSP_ENABLE_FIR        0
+#define DSP_ENABLE_LPF        0
+#define DSP_ENABLE_HPF        1
+#define DSP_ENABLE_REVERB     0
+#define DSP_ENABLE_FIR        0
 
-// #define SAMPLE_RATE           16000.0f
-// #define TWO_PI                6.28318530718f
+#define SAMPLE_RATE           16000.0f
+#define TWO_PI                6.28318530718f
 
-// /* ---------- 1st order IIR state ---------- */
-// static float lpf_yL = 0, lpf_yR = 0;
-// static float hpf_yL = 0, hpf_yR = 0;
-// static float hpf_xL = 0, hpf_xR = 0;
+/* ---------- 1st order IIR state ---------- */
+static float lpf_yL = 0, lpf_yR = 0;
+static float hpf_yL = 0, hpf_yR = 0;
+static float hpf_xL = 0, hpf_xR = 0;
 
-// /* ---------- Reverb (simple feedback delay) ---------- */
-// #define REVERB_DELAY_SAMPLES  800   // 50ms @16kHz
-// #define REVERB_FEEDBACK       0.4f
+/* ---------- Reverb (simple feedback delay) ---------- */
+#define REVERB_DELAY_SAMPLES  800   // 50ms @16kHz
+#define REVERB_FEEDBACK       0.4f
 
-// static float reverbBufL[REVERB_DELAY_SAMPLES];
-// static float reverbBufR[REVERB_DELAY_SAMPLES];
-// static uint32_t reverbIndex = 0;
+static float reverbBufL[REVERB_DELAY_SAMPLES];
+static float reverbBufR[REVERB_DELAY_SAMPLES];
+static uint32_t reverbIndex = 0;
 
-// /* ---------- FIR Convolution ---------- */
-// #define FIR_TAPS 16
-// static const float firCoeff[FIR_TAPS] =
-// {
-//   -0.01f, -0.02f, 0.0f, 0.08f,
-//    0.2f,  0.3f,  0.2f, 0.08f,
-//    0.0f, -0.02f, -0.01f, 0.0f,
-//    0.0f,  0.0f,  0.0f,  0.0f
-// };
+/* ---------- FIR Convolution ---------- */
+#define FIR_TAPS 16
+static const float firCoeff[FIR_TAPS] =
+{
+  -0.01f, -0.02f, 0.0f, 0.08f,
+   0.2f,  0.3f,  0.2f, 0.08f,
+   0.0f, -0.02f, -0.01f, 0.0f,
+   0.0f,  0.0f,  0.0f,  0.0f
+};
 
-// static float firStateL[FIR_TAPS] = {0};
-// static float firStateR[FIR_TAPS] = {0};
+static float firStateL[FIR_TAPS] = {0};
+static float firStateR[FIR_TAPS] = {0};
 // **** end no CMSIS DSP stuff ****
 
 
@@ -483,135 +483,135 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
   }
 }
 
-// // uses first order filters, without CMSIS-DSP
-// static void DSP_Process(int16_t *buffer, uint32_t samples)
-// {
-//     float fc = 10000.0f;   // cutoff 2kHz
-//     float alpha_lpf = (2.0f * 3.14159f * fc) /
-//                       (2.0f * 3.14159f * fc + SAMPLE_RATE);
-
-//     float alpha_hpf = SAMPLE_RATE /
-//                       (2.0f * 3.14159f * fc + SAMPLE_RATE);
-
-//     for(uint32_t i = 0; i < samples; i += 2) // stereo
-//     {
-//         float xL = buffer[i];
-//         float xR = buffer[i+1];
-
-// #if DSP_ENABLE_LPF
-//         lpf_yL = lpf_yL + alpha_lpf * (xL - lpf_yL);
-//         lpf_yR = lpf_yR + alpha_lpf * (xR - lpf_yR);
-//         xL = lpf_yL;
-//         xR = lpf_yR;
-// #endif
-
-// #if DSP_ENABLE_HPF
-//         float yL = alpha_hpf * (hpf_yL + xL - hpf_xL);
-//         float yR = alpha_hpf * (hpf_yR + xR - hpf_xR);
-//         hpf_xL = xL; hpf_xR = xR;
-//         hpf_yL = yL; hpf_yR = yR;
-//         xL = yL;
-//         xR = yR;
-// #endif
-
-// #if DSP_ENABLE_REVERB
-//         float delayedL = reverbBufL[reverbIndex];
-//         float delayedR = reverbBufR[reverbIndex];
-
-//         reverbBufL[reverbIndex] = xL + delayedL * REVERB_FEEDBACK;
-//         reverbBufR[reverbIndex] = xR + delayedR * REVERB_FEEDBACK;
-
-//         xL += delayedL;
-//         xR += delayedR;
-
-//         reverbIndex++;
-//         if(reverbIndex >= REVERB_DELAY_SAMPLES)
-//             reverbIndex = 0;
-// #endif
-
-// #if DSP_ENABLE_FIR
-//         /* Shift history */
-//         memmove(&firStateL[1], &firStateL[0], (FIR_TAPS-1)*sizeof(float));
-//         memmove(&firStateR[1], &firStateR[0], (FIR_TAPS-1)*sizeof(float));
-//         firStateL[0] = xL;
-//         firStateR[0] = xR;
-
-//         float accL = 0, accR = 0;
-//         for(int k=0;k<FIR_TAPS;k++)
-//         {
-//             accL += firCoeff[k]*firStateL[k];
-//             accR += firCoeff[k]*firStateR[k];
-//         }
-//         xL = accL;
-//         xR = accR;
-// #endif
-
-//         /* Saturation */
-//         if(xL > 32767) xL = 32767;
-//         if(xL < -32768) xL = -32768;
-//         if(xR > 32767) xR = 32767;
-//         if(xR < -32768) xR = -32768;
-
-//         buffer[i]   = (int16_t)xL;
-//         buffer[i+1] = (int16_t)xR;
-//     }
-// }
-
-static float32_t floatBufL[BLOCK_SIZE/2];
-static float32_t floatBufR[BLOCK_SIZE/2];
-
-static void DSP_Process(int16_t *pcm, uint32_t samples)
+// uses first order filters, without CMSIS-DSP
+static void DSP_Process(int16_t *buffer, uint32_t samples)
 {
-    uint32_t n = samples/2;
+    float fc = 10000.0f;   // cutoff 2kHz
+    float alpha_lpf = (2.0f * 3.14159f * fc) /
+                      (2.0f * 3.14159f * fc + SAMPLE_RATE);
 
-    /* De-interleave + convert */
-    for(uint32_t i=0;i<n;i++)
+    float alpha_hpf = SAMPLE_RATE /
+                      (2.0f * 3.14159f * fc + SAMPLE_RATE);
+
+    for(uint32_t i = 0; i < samples; i += 2) // stereo
     {
-        // floatBufL[i] = (float32_t)pcm[2*i];
-        // floatBufR[i] = (float32_t)pcm[2*i+1];
-        floatBufL[i] = (float32_t)pcm[2*i] / 32768.0f;
-        floatBufR[i] = (float32_t)pcm[2*i+1] / 32768.0f;
-    }
+        float xL = buffer[i];
+        float xR = buffer[i+1];
 
-#if DSP_LPF_ENABLE
-    arm_biquad_cascade_df1_f32(&lpfL, floatBufL, floatBufL, n);
-    arm_biquad_cascade_df1_f32(&lpfR, floatBufR, floatBufR, n);
+#if DSP_ENABLE_LPF
+        lpf_yL = lpf_yL + alpha_lpf * (xL - lpf_yL);
+        lpf_yR = lpf_yR + alpha_lpf * (xR - lpf_yR);
+        xL = lpf_yL;
+        xR = lpf_yR;
 #endif
 
-#if DSP_HPF_ENABLE
-    arm_biquad_cascade_df1_f32(&hpfL, floatBufL, floatBufL, n);
-    arm_biquad_cascade_df1_f32(&hpfR, floatBufR, floatBufR, n);
+#if DSP_ENABLE_HPF
+        float yL = alpha_hpf * (hpf_yL + xL - hpf_xL);
+        float yR = alpha_hpf * (hpf_yR + xR - hpf_xR);
+        hpf_xL = xL; hpf_xR = xR;
+        hpf_yL = yL; hpf_yR = yR;
+        xL = yL;
+        xR = yR;
 #endif
 
-#if DSP_FIR_ENABLE
-    arm_fir_f32(&firL, floatBufL, floatBufL, n);
-    arm_fir_f32(&firR, floatBufR, floatBufR, n);
+#if DSP_ENABLE_REVERB
+        float delayedL = reverbBufL[reverbIndex];
+        float delayedR = reverbBufR[reverbIndex];
+
+        reverbBufL[reverbIndex] = xL + delayedL * REVERB_FEEDBACK;
+        reverbBufR[reverbIndex] = xR + delayedR * REVERB_FEEDBACK;
+
+        xL += delayedL;
+        xR += delayedR;
+
+        reverbIndex++;
+        if(reverbIndex >= REVERB_DELAY_SAMPLES)
+            reverbIndex = 0;
 #endif
 
-#if DSP_REVERB_ENABLE
-    arm_fir_f32(&reverbL, floatBufL, floatBufL, n);
-    arm_fir_f32(&reverbR, floatBufR, floatBufR, n);
+#if DSP_ENABLE_FIR
+        /* Shift history */
+        memmove(&firStateL[1], &firStateL[0], (FIR_TAPS-1)*sizeof(float));
+        memmove(&firStateR[1], &firStateR[0], (FIR_TAPS-1)*sizeof(float));
+        firStateL[0] = xL;
+        firStateR[0] = xR;
+
+        float accL = 0, accR = 0;
+        for(int k=0;k<FIR_TAPS;k++)
+        {
+            accL += firCoeff[k]*firStateL[k];
+            accR += firCoeff[k]*firStateR[k];
+        }
+        xL = accL;
+        xR = accR;
 #endif
 
-    /* Re-interleave + saturate */
-    for(uint32_t i=0;i<n;i++)
-    {
-        float32_t L = floatBufL[i];
-        float32_t R = floatBufR[i];
+        /* Saturation */
+        if(xL > 32767) xL = 32767;
+        if(xL < -32768) xL = -32768;
+        if(xR > 32767) xR = 32767;
+        if(xR < -32768) xR = -32768;
 
-        // if(L > 32767) L = 32767;
-        // if(L < -32768) L = -32768;
-        // if(R > 32767) R = 32767;
-        // if(R < -32768) R = -32768;
-
-        if(L > 1.0f) L = 1.0f;
-        if(L < -1.0f) L = -1.0f;
-        if(R > 1.0f) R = 1.0f;
-        if(R < -1.0f) R = -1.0f;
-
-        // pcm[2*i]   = (int16_t)L;
-        // pcm[2*i+1] = (int16_t)R;
-        pcm[2*i]   = (int16_t)(floatBufL[i] * 32767.0f);
-        pcm[2*i+1] = (int16_t)(floatBufR[i] * 32767.0f);
+        buffer[i]   = (int16_t)xL;
+        buffer[i+1] = (int16_t)xR;
     }
 }
+
+// static float32_t floatBufL[BLOCK_SIZE/2];
+// static float32_t floatBufR[BLOCK_SIZE/2];
+
+// static void DSP_Process(int16_t *pcm, uint32_t samples)
+// {
+//     uint32_t n = samples/2;
+
+//     /* De-interleave + convert */
+//     for(uint32_t i=0;i<n;i++)
+//     {
+//         // floatBufL[i] = (float32_t)pcm[2*i];
+//         // floatBufR[i] = (float32_t)pcm[2*i+1];
+//         floatBufL[i] = (float32_t)pcm[2*i] / 32768.0f;
+//         floatBufR[i] = (float32_t)pcm[2*i+1] / 32768.0f;
+//     }
+
+// #if DSP_LPF_ENABLE
+//     arm_biquad_cascade_df1_f32(&lpfL, floatBufL, floatBufL, n);
+//     arm_biquad_cascade_df1_f32(&lpfR, floatBufR, floatBufR, n);
+// #endif
+
+// #if DSP_HPF_ENABLE
+//     arm_biquad_cascade_df1_f32(&hpfL, floatBufL, floatBufL, n);
+//     arm_biquad_cascade_df1_f32(&hpfR, floatBufR, floatBufR, n);
+// #endif
+
+// #if DSP_FIR_ENABLE
+//     arm_fir_f32(&firL, floatBufL, floatBufL, n);
+//     arm_fir_f32(&firR, floatBufR, floatBufR, n);
+// #endif
+
+// #if DSP_REVERB_ENABLE
+//     arm_fir_f32(&reverbL, floatBufL, floatBufL, n);
+//     arm_fir_f32(&reverbR, floatBufR, floatBufR, n);
+// #endif
+
+//     /* Re-interleave + saturate */
+//     for(uint32_t i=0;i<n;i++)
+//     {
+//         float32_t L = floatBufL[i];
+//         float32_t R = floatBufR[i];
+
+//         // if(L > 32767) L = 32767;
+//         // if(L < -32768) L = -32768;
+//         // if(R > 32767) R = 32767;
+//         // if(R < -32768) R = -32768;
+
+//         if(L > 1.0f) L = 1.0f;
+//         if(L < -1.0f) L = -1.0f;
+//         if(R > 1.0f) R = 1.0f;
+//         if(R < -1.0f) R = -1.0f;
+
+//         // pcm[2*i]   = (int16_t)L;
+//         // pcm[2*i+1] = (int16_t)R;
+//         pcm[2*i]   = (int16_t)(floatBufL[i] * 32767.0f);
+//         pcm[2*i+1] = (int16_t)(floatBufR[i] * 32767.0f);
+//     }
+// }
