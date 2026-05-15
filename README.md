@@ -15,7 +15,7 @@ The `BSP` folder currently contains minimal working audio record/playback demo u
 
 Search for `BSP_AUDIO_IN_RecordPDM` in `BSP/Src/main.c`. This method is defined in `BSP\Drivers\BSP\STM32H750B-DK\stm32h750b_discovery_audio.c`, which uses `HAL_SAI_Receive_DMA`. Replace the `HAL_SAI_Receive_DMA` call with `HAL_SAI_Receive` (polling) or `HAL_SAI_Receive_IT` (interrupt based) calls and write interrupt callbacks as needed.
 
-Currently this callback is used for `HAL_SAI_Receive_DMA`. Something similar should work with `HAL_SAI_Receive_IT`:
+Currently this callback is used for `HAL_SAI_Receive_DMA` in `BSP\Drivers\BSP\STM32H750B-DK\stm32h750b_discovery_audio.c`. Something similar should work with `HAL_SAI_Receive_IT`:
 
 ```c
 void HAL_SAI_RxCpltCallback(SAI_HandleTypeDef *hsai)
