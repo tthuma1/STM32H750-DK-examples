@@ -1,6 +1,6 @@
 # STM32H750-DK-examples
 
-### 15/05/3036 Instruction for BSP folder
+### 15/05/2036 Instruction for BSP folder
 
 The `BSP` folder currently contains minimal working audio record/playback demo using the BSP project.
 
