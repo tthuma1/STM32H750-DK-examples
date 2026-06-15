@@ -3,34 +3,29 @@
 ## What this is
 
 Bare-metal STM32 audio loopback demo on the **STM32H750B-DK** board
-(STM32H750XBH6 MPU, Cortex-M7). It captures audio from the on-board PDM
-MEMS microphone (IMP34DT05TR) and plays it back in real time through the
-green line-out jack via the WM8994 codec. CubeMX-generated HAL project, built
-with STM32CubeIDE.
+(STM32H750XBH6 MPU, Cortex-M7). It captures two-channel (stereo) PDM audio
+from the on-board MEMS microphone (IMP34DT05TR, wired as a stereo PDM pair)
+and plays it back in real time through the green line-out jack via the WM8994
+codec. CubeMX-generated HAL project, built with STM32CubeIDE.
 
 ## Data path
 
 ```
-MEMS mics ──PDM──▶ SAI4_A (PDM mode) ──BDMA Ch1──▶ recordPDMBuf (D3 SRAM @0x38000000)
-                                              │
-                           BDMA half/cplt IRQ │  CPU: BSP_AUDIO_IN_PDMToPCM()
-                                              ▼
-                                  RecPlayback ring buffer (AXI SRAM, D1)
-                                              │
-                           DMA2_Stream1 ◀─────┘ (circular, mem→periph)
-                                              ▼
-                               SAI2_A ──I2S──▶ WM8994 ──▶ green line-out jack
-              (WM8994 register control over I2C4)
+mics ─PDM→ SAI4_A ─BDMA Ch1→ recordPDMBuf (D3 SRAM @0x38000000)
+   ─[BDMA IRQ: CPU BSP_AUDIO_IN_PDMToPCM]→ RecPlayback ring (AXI SRAM, D1)
+   ─DMA2_Stream1 (circular)→ SAI2_A ─I2S→ WM8994 ─→ line-out   (WM8994 ctrl via I2C4)
 ```
 
-- **Audio in (instance 1):** `AUDIO_IN_DEVICE_DIGITAL_MIC`, SAI4_A in PDM mode,
-  BDMA into `recordPDMBuf`. BDMA can *only* reach D3 SRAM, so `recordPDMBuf`
-  is forced into the `.D3_SRAM` section (`0x38000000`).
+- **Audio in (instance 1):** `AUDIO_IN_DEVICE_DIGITAL_MIC` (= MIC1 | MIC2),
+  `ChannelsNbr = 2`, SAI4_A in PDM mode (`MicPairsNbr = 2`), BDMA into
+  `recordPDMBuf`. BDMA can *only* reach D3 SRAM, so `recordPDMBuf` is forced
+  into the `.D3_SRAM` section (`0x38000000`).
 - **PDM→PCM:** done by CPU in the BDMA half/complete callbacks
-  (`BSP_AUDIO_IN_HalfTransfer_CallBack` / `..._TransferComplete_CallBack`),
-  writing PCM into `RecPlayback` at `playbackPtr`.
+  (`BSP_AUDIO_IN_HalfTransfer_CallBack` / `..._TransferComplete_CallBack`).
+  One PDM filter runs per channel and produces interleaved stereo PCM, written
+  into `RecPlayback` at `playbackPtr`.
 - **Audio out (instance 0):** WM8994 over SAI2_A + DMA2_Stream1, circular over
-  `RecPlayback`. Configured/controlled over I2C4.
+  `RecPlayback`, 2 channels. Configured/controlled over I2C4.
 - Config: 16 kHz, 16-bit, stereo (`AUDIO_FREQUENCY`, sizes in `Core/Inc/main.h`).
 
 ## Where the logic lives
