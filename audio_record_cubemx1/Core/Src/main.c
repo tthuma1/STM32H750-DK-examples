@@ -48,10 +48,10 @@ CRC_HandleTypeDef hcrc;
 /* PDM record buffer: SAI4 PDM uses BDMA, which can only access D3 SRAM
    (0x38000000). The .D3_SRAM section is mapped to RAM_D3 in the linker
    script. NOLOAD section: not zero-initialised at startup. */
-ALIGN_32BYTES (static uint16_t recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE]) __attribute__((section(".D3_SRAM")));
+static uint16_t recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE] __attribute__((section(".D3_SRAM")));
 
 /* PCM playback ring buffer, lives in AXI SRAM (DMA2-accessible) */
-ALIGN_32BYTES (static uint16_t RecPlayback[AUDIO_BUFF_SIZE]);
+static uint16_t RecPlayback[AUDIO_BUFF_SIZE];
 
 static uint32_t playbackPtr = 0;
 

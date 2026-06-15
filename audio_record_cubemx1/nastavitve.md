@@ -10,8 +10,17 @@ Vse SAI nastavitve in PLL2 se nastavi v stm32_audio.c: ti rabiš samo narediit i
 Dodaj SAI driverje v /Drivers/STM32H7xx_HAL_Driver v /Inc in /Src iz https://github.com/STMicroelectronics/stm32h7xx-hal-driver/tree/367a0a097b03a3d417dd6f6b02fd17e32b2a5742:
 - sai.c, sai_ex.c, sai.h, sai_ex.h
 
+v main.c lahko vklopiš cache, lahko pa tudi ne v USER CODE BEGIN 1:
+```
+  /* Enable I-Cache */
+  SCB_EnableICache();
 
-to dodaj pod USER CODE BEGIN 2:
+  /* Enable D-Cache */
+  SCB_EnableDCache();
+```
+Če vklopiš cache, potem pazi, da sta recordPDMBuf in RecPlayback nastavljena na ALIGN_32BYTES, in pri DMA callbackih odkomentiraj `SCB_InvalidateDCache_by_Addr` in `SCB_CleanDCache_by_Addr` klice:
+
+v main.c to dodaj pod USER CODE BEGIN 2:
 ```
   AudioOutInit.Device = AUDIO_OUT_DEVICE_HEADPHONE;
   AudioOutInit.ChannelsNbr = 2;
