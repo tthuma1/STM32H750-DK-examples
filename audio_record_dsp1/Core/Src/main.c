@@ -33,15 +33,15 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 /* ---- DSP selection (independent, combinable; chained HPF -> LPF -> reverb) ---- */
-#define DSP_ENABLE_HPF      1
+#define DSP_ENABLE_HPF      0
 #define DSP_ENABLE_LPF      0
-#define DSP_ENABLE_REVERB   0
+#define DSP_ENABLE_REVERB   1
 
 /* ---- Tunables ---- */
-#define DSP_HPF_CUTOFF_HZ   800.0f
-#define DSP_LPF_CUTOFF_HZ   1500.0f
-#define DSP_REVERB_DELAY_MS 300.0f
-#define DSP_REVERB_FEEDBACK 0.75f      /* |g| < 1 for stability */
+#define DSP_HPF_CUTOFF_HZ   5000.0f
+#define DSP_LPF_CUTOFF_HZ   5000.0f
+#define DSP_REVERB_DELAY_MS 80.0f
+#define DSP_REVERB_FEEDBACK 0.40f      /* |g| < 1 for stability */
 
 /* ---- Derived, compile-time-constant one-pole coefficients (RC model) ---- */
 #define DSP_PI       3.14159265358979f
