@@ -32,7 +32,27 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* ---- DSP selection (independent, combinable; chained HPF -> LPF -> reverb) ---- */
+#define DSP_ENABLE_HPF      1
+#define DSP_ENABLE_LPF      1
+#define DSP_ENABLE_REVERB   1
 
+/* ---- Tunables ---- */
+#define DSP_HPF_CUTOFF_HZ   1500.0f
+#define DSP_LPF_CUTOFF_HZ   2500.0f
+#define DSP_REVERB_DELAY_MS 300.0f
+#define DSP_REVERB_FEEDBACK 0.75f      /* |g| < 1 for stability */
+#define DSP_HPF_STAGES      3          /* cascade → ~18 dB/oct roll-off */
+#define DSP_LPF_STAGES      3
+
+/* ---- Derived, compile-time-constant one-pole coefficients (RC model) ---- */
+#define DSP_PI       3.14159265358979f
+#define DSP_DT       (1.0f / (float)AUDIO_FREQUENCY)
+#define DSP_LPF_RC   (1.0f / (2.0f * DSP_PI * DSP_LPF_CUTOFF_HZ))
+#define DSP_LPF_A    (DSP_DT / (DSP_LPF_RC + DSP_DT))            /* low-pass alpha */
+#define DSP_HPF_RC   (1.0f / (2.0f * DSP_PI * DSP_HPF_CUTOFF_HZ))
+#define DSP_HPF_A    (DSP_HPF_RC / (DSP_HPF_RC + DSP_DT))        /* high-pass alpha */
+#define DSP_REVERB_DELAY  ((uint32_t)(DSP_REVERB_DELAY_MS * 0.001f * AUDIO_FREQUENCY))
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -69,7 +89,66 @@ static void MX_CRC_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* --- Per-channel DSP state (index 0 = L, 1 = R), zero-initialised --- */
+#if DSP_ENABLE_HPF
+static float hpf_x1[2][DSP_HPF_STAGES], hpf_y1[2][DSP_HPF_STAGES];
+#endif
+#if DSP_ENABLE_LPF
+static float lpf_y1[2][DSP_LPF_STAGES];
+#endif
+#if DSP_ENABLE_REVERB
+static float reverb_buf[2][DSP_REVERB_DELAY];   /* one delay line per channel */
+static uint32_t reverb_idx[2];
+#endif
 
+/* Clamp a float sample to the signed 16-bit PCM range. */
+static inline float dsp_clip(float v)
+{
+  if (v >  32767.0f) return  32767.0f;
+  if (v < -32768.0f) return -32768.0f;
+  return v;
+}
+
+/**
+  * @brief  Apply the enabled DSP effects in place to a block of interleaved
+  *         stereo 16-bit PCM. Effects are chained HPF -> LPF -> reverb.
+  * @param  pcm    Pointer to interleaved (L,R,L,R...) PCM, treated as signed.
+  * @param  frames Number of stereo frames in the block.
+  * @retval None
+  */
+static void DSP_Process(uint16_t *pcm, uint32_t frames)
+{
+  for (uint32_t i = 0; i < frames; i++)
+  {
+    for (uint32_t ch = 0; ch < 2; ch++)
+    {
+      float x = (float)(int16_t)pcm[2 * i + ch];   /* interpret as signed PCM */
+
+#if DSP_ENABLE_HPF
+      for (int s = 0; s < DSP_HPF_STAGES; s++) {
+          float y = DSP_HPF_A * (hpf_y1[ch][s] + x - hpf_x1[ch][s]);
+          hpf_x1[ch][s] = x;
+          hpf_y1[ch][s] = y;
+          x = y;
+      }
+#endif
+#if DSP_ENABLE_LPF
+      for (int s = 0; s < DSP_LPF_STAGES; s++) {
+          lpf_y1[ch][s] += DSP_LPF_A * (x - lpf_y1[ch][s]);
+          x = lpf_y1[ch][s];
+      }
+#endif
+#if DSP_ENABLE_REVERB
+      float d = reverb_buf[ch][reverb_idx[ch]];
+      float out = x + DSP_REVERB_FEEDBACK * d;       /* y[n] = x[n] + g*y[n-D] */
+      reverb_buf[ch][reverb_idx[ch]] = out;
+      if (++reverb_idx[ch] >= DSP_REVERB_DELAY) reverb_idx[ch] = 0;
+      x = out;
+#endif
+      pcm[2 * i + ch] = (uint16_t)(int16_t)dsp_clip(x);
+    }
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -269,6 +348,8 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
                           (uint16_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE / 2U],
                           &RecPlayback[playbackPtr]);
 
+    DSP_Process(&RecPlayback[playbackPtr], (AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U);
+
     playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U;
     if (playbackPtr >= AUDIO_BUFF_SIZE)
     {
@@ -289,6 +370,8 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
     BSP_AUDIO_IN_PDMToPCM(Instance,
                           (uint16_t *)&recordPDMBuf[0],
                           &RecPlayback[playbackPtr]);
+
+    DSP_Process(&RecPlayback[playbackPtr], (AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U);
 
     playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U;
     if (playbackPtr >= AUDIO_BUFF_SIZE)
