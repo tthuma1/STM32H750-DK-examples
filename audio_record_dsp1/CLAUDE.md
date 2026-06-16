@@ -33,11 +33,14 @@ mics ─PDM→ SAI4_A ─BDMA Ch1→ recordPDMBuf (D3 SRAM @0x38000000)
 
 ## DSP stage
 
-`DSP_Process` (in `main.c`) edits the PCM in place, applying four combinable
-effects as a fixed chain **HPF → LPF → reverb → conv**: one-pole RC high/low
-pass, an IIR feedback delay line, and an 8-tap moving-average smoothing FIR
-(`dsp_conv_kernel`). Tune via the `DSP_*` `#define`s in `USER CODE BEGIN PD`;
-disabled effects (`DSP_ENABLE_*` = 0) compile out.
+`DSP_Process` (in `main.c`) edits the PCM in place, applying five combinable
+effects as a fixed chain **HPF → LPF → reverb → conv → RIR**: one-pole RC
+high/low pass, an IIR feedback delay line, an 8-tap moving-average smoothing
+FIR (`dsp_conv_kernel`), and a Room Impulse Response convolution
+(`dsp_rir_kernel`, a long FIR — synthetic exp-decay room response built at
+startup by `DSP_RIR_Build`, tunable via `DSP_RIR_RT60_MS`/`_LEN_MS`/`_WET`).
+Tune via the `DSP_*` `#define`s in `USER CODE BEGIN PD`; disabled effects
+(`DSP_ENABLE_*` = 0) compile out.
 
 ## Where the logic lives
 
@@ -78,6 +81,8 @@ Debug/                          STM32CubeIDE build output (makefile + artifacts)
 
 Default build links against `STM32H750XBHX_FLASH.ld` (runs from internal flash).
 Flash/debug with ST-LINK via the IDE or the `.launch` config.
+
+Don't try to build the project after you are done with implementation.
 
 ## Gotchas
 

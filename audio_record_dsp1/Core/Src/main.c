@@ -33,11 +33,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* ---- DSP selection (independent, combinable; chained HPF -> LPF -> reverb -> conv) ---- */
-#define DSP_ENABLE_HPF      1
+/* ---- DSP selection (independent, combinable; chained GATE -> HPF -> LPF -> reverb -> conv -> RIR) ---- */
+#define DSP_ENABLE_GATE     0          /* noise gate / downward expander (runs first in the chain) */
+#define DSP_ENABLE_HPF      0
 #define DSP_ENABLE_LPF      0
 #define DSP_ENABLE_REVERB   0
 #define DSP_ENABLE_CONV     0          /* FIR convolution (single echo) */
+#define DSP_ENABLE_RIR      1          /* Room Impulse Response convolution (room acoustics) */
 
 /* ---- Tunables ---- */
 #define DSP_HPF_CUTOFF_HZ   5000.0f
@@ -45,6 +47,28 @@
 #define DSP_REVERB_DELAY_MS 80
 #define DSP_REVERB_FEEDBACK 0.40f      /* |g| < 1 for stability */
 #define DSP_CONV_NTAPS      8          /* FIR smoothing: 8-tap moving average */
+/* Noise gate / downward expander. The MEMS mic has a constant broadband
+   self-noise floor; dry it is quiet, but the reverb integrates and sustains it
+   into an audible wash. Gating the signal BEFORE the reverb means the noise
+   floor never feeds the tail - during silence the input is muted, so no new
+   reverb energy is produced (the existing tail still decays naturally).
+   Channel-linked, soft-knee, with a fast attack (don't chop transients) and a
+   slow release (smooth close). THRESH/KNEE are in int16 LSB and must be tuned
+   to YOUR mic: read the |sample| level during silence (e.g. watch gate_env in
+   the debugger with no signal) and set THRESH a little above it. */
+#define DSP_GATE_THRESH     600.0f     /* env at/below this => gate fully closed (~noise floor) */
+#define DSP_GATE_KNEE       500.0f     /* env this far above THRESH => fully open (soft ramp) */
+#define DSP_GATE_ATK        0.40f      /* envelope attack coeff (fast: gate opens quickly) */
+#define DSP_GATE_REL        0.0040f    /* envelope release coeff (faster: gate closes before noise smears) */
+/* NOTE: the M7 runs at 64 MHz here (HSI, no PLL - see SystemClock_Config), so a
+   DSP_Process callback has only ~64000 cycles (16 frames @ 16 kHz = 1 ms) for
+   EVERYTHING (PDM->PCM + gate + RIR + cache). The RIR is a plain time-domain
+   FIR whose cost scales linearly with the tap count (= LEN_MS * fs / 1000).
+   Make sure that DSP_RIR_NTAPS will be small enough.
+   */
+#define DSP_RIR_RT60_MS     20         /* target reverb time of the synthetic room (RT60) */
+#define DSP_RIR_LEN_MS      8          /* length of the impulse response actually convolved */
+#define DSP_RIR_WET         0.25f      /* wet amount: 0 = dry only, larger = more reverb tail */
 
 /* ---- Derived, compile-time-constant one-pole coefficients (RC model) ---- */
 #define DSP_PI       3.14159265358979f
@@ -54,6 +78,13 @@
 #define DSP_HPF_RC   (1.0f / (2.0f * DSP_PI * DSP_HPF_CUTOFF_HZ))
 #define DSP_HPF_A    (DSP_HPF_RC / (DSP_HPF_RC + DSP_DT))        /* high-pass alpha */
 #define DSP_REVERB_DELAY  (DSP_REVERB_DELAY_MS * AUDIO_FREQUENCY / 1000)
+/* RIR length in taps (compile-time constant: ms * fs / 1000) */
+#define DSP_RIR_NTAPS     (DSP_RIR_LEN_MS * AUDIO_FREQUENCY / 1000)
+/* Output makeup gain for the RIR stage. The dry signal is already preserved at
+   full scale (h[0] = 1), so adding the wet tail on top overflows ±32767 and
+   clips. Scaling the wet+dry sum by 1/(1+WET) restores headroom so the reverb
+   blends in instead of slamming the clip rails. */
+#define DSP_RIR_MAKEUP    (1.0f / (1.0f + DSP_RIR_WET))
 
 /* ---- Cache enables ---- */
 #define ENABLE_ICACHE       1
@@ -65,6 +96,7 @@
 #define CMSIS_FRAMES        ((AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U)
 /* FIR state length = numTaps + blockSize - 1 */
 #define CMSIS_FIR_STATE_LEN (DSP_CONV_NTAPS + CMSIS_FRAMES - 1)
+#define CMSIS_RIR_STATE_LEN (DSP_RIR_NTAPS + CMSIS_FRAMES - 1)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -102,6 +134,9 @@ static void MX_GPIO_Init(void);
 static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 static void DSP_Process(uint16_t *pcm, uint32_t frames);
+#if DSP_ENABLE_RIR
+static void DSP_RIR_Build(void);
+#endif
 #if DSP_USE_CMSIS
 static void DSP_CMSIS_Init(void);
 #endif
@@ -111,6 +146,11 @@ static void DSP_CMSIS_Init(void);
 /* USER CODE BEGIN 0 */
 /* --- Per-channel DSP state (index 0 = L, 1 = R), zero-initialised ---
    Custom path and CMSIS reverb share these delay-line buffers.          */
+#if DSP_ENABLE_GATE
+  /* Channel-linked noise-gate state, persisted across calls: a smoothed
+     peak envelope of the (stereo-max) input, used to derive the gate gain. */
+  static float gate_env = 0.0f;
+#endif
 #if DSP_ENABLE_HPF
   static float hpf_x1[2], hpf_y1[2];              /* prev input, prev output */
 #endif
@@ -129,6 +169,18 @@ static void DSP_CMSIS_Init(void);
     0.125f, 0.125f, 0.125f, 0.125f,
   };
   static float conv_hist[2][DSP_CONV_NTAPS];   /* last NTAPS inputs per channel */
+#endif
+#if DSP_ENABLE_RIR
+  /* Synthetic room impulse response, h[0] = direct path. Built once at
+     startup by DSP_RIR_Build(). The output is x convolved with h, i.e.
+     y[n] = sum_k h[k] * x[n-k] - exactly room-acoustics convolution. */
+  static float dsp_rir_kernel[DSP_RIR_NTAPS];
+  #if !DSP_USE_CMSIS
+    /* Custom path keeps a per-channel circular history of the last NTAPS
+       inputs (newest at rir_idx) so each output is one dot product. */
+    static float rir_hist[2][DSP_RIR_NTAPS];
+    static uint32_t rir_idx[2];
+  #endif
 #endif
 
 /* --- CMSIS-DSP instances, state, and intermediate buffers --- */
@@ -150,6 +202,13 @@ static void DSP_CMSIS_Init(void);
     static float32_t cmsis_fir_coeffs[DSP_CONV_NTAPS];
     static float32_t cmsis_fir_out_L[CMSIS_FRAMES];  /* arm_fir_f32 needs separate in/out */
     static float32_t cmsis_fir_out_R[CMSIS_FRAMES];
+  #endif
+  #if DSP_ENABLE_RIR
+    static arm_fir_instance_f32 cmsis_rir[2];
+    static float32_t cmsis_rir_state[2][CMSIS_RIR_STATE_LEN];
+    static float32_t cmsis_rir_coeffs[DSP_RIR_NTAPS];   /* time-reversed kernel for arm_fir */
+    static float32_t cmsis_rir_out_L[CMSIS_FRAMES];     /* arm_fir_f32 needs separate in/out */
+    static float32_t cmsis_rir_out_R[CMSIS_FRAMES];
   #endif
   static float32_t cmsis_buf_L[CMSIS_FRAMES];  /* per-channel de-interleave scratch */
   static float32_t cmsis_buf_R[CMSIS_FRAMES];
@@ -233,6 +292,9 @@ int main(void)
      interrupt can fire (and call DSP_Process -> arm_*) while the codec is
      still being configured over I2C - i.e. before the filters exist. Doing
      this here guarantees numStages/pCoeffs/pState are valid first. */
+#if DSP_ENABLE_RIR
+  DSP_RIR_Build();          /* generate the synthetic room response before init/streaming */
+#endif
 #if DSP_USE_CMSIS
   DSP_CMSIS_Init();
 #endif
@@ -468,6 +530,24 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames)
     cmsis_buf_R[i] = (float32_t)(int16_t)pcm[2 * i + 1];
   }
 
+#if DSP_ENABLE_GATE
+  /* Noise gate, applied before any reverb so the mic's idle hiss never feeds
+     the tail. Channel-linked: one envelope/gain drives both L and R so the
+     stereo image can't wander. Soft-knee gain ramps 0..1 over [THRESH, THRESH+KNEE]. */
+  for (uint32_t i = 0; i < frames; i++)
+  {
+    float aL = cmsis_buf_L[i] < 0.0f ? -cmsis_buf_L[i] : cmsis_buf_L[i];
+    float aR = cmsis_buf_R[i] < 0.0f ? -cmsis_buf_R[i] : cmsis_buf_R[i];
+    float in = aL > aR ? aL : aR;
+    float c  = (in > gate_env) ? DSP_GATE_ATK : DSP_GATE_REL;
+    gate_env += c * (in - gate_env);                 /* fast-attack / slow-release follower */
+    float g = (gate_env - DSP_GATE_THRESH) / DSP_GATE_KNEE;
+    if (g < 0.0f) g = 0.0f; else if (g > 1.0f) g = 1.0f;
+    cmsis_buf_L[i] *= g;
+    cmsis_buf_R[i] *= g;
+  }
+#endif
+
 #if DSP_ENABLE_HPF
   /* 2nd-order Butterworth HPF, in-place (bilinear-transform biquad). */
   arm_biquad_cascade_df1_f32(&cmsis_hpf[0], cmsis_buf_L, cmsis_buf_L, frames);
@@ -499,21 +579,36 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames)
 #endif
 
 #if DSP_ENABLE_CONV
-  /* arm_fir_f32 does not support in-place; output goes to separate scratch. */
+  /* arm_fir_f32 does not support in-place; output goes to separate scratch,
+     then copy back so later stages keep operating on cmsis_buf_*. */
   arm_fir_f32(&cmsis_fir[0], cmsis_buf_L, cmsis_fir_out_L, frames);
   arm_fir_f32(&cmsis_fir[1], cmsis_buf_R, cmsis_fir_out_R, frames);
   for (uint32_t i = 0; i < frames; i++)
   {
-    pcm[2 * i + 0] = (uint16_t)(int16_t)dsp_clip(cmsis_fir_out_L[i]);
-    pcm[2 * i + 1] = (uint16_t)(int16_t)dsp_clip(cmsis_fir_out_R[i]);
+    cmsis_buf_L[i] = cmsis_fir_out_L[i];
+    cmsis_buf_R[i] = cmsis_fir_out_R[i];
   }
-#else
+#endif
+
+#if DSP_ENABLE_RIR
+  /* Room-acoustics convolution: filter each channel with the room impulse
+     response (a long FIR), then wet/dry mix. Since h[0] = 1 the dry signal
+     is preserved and the reverberant tail is added on top; the makeup gain
+     keeps the dry+wet sum inside the 16-bit range so it doesn't clip. */
+  arm_fir_f32(&cmsis_rir[0], cmsis_buf_L, cmsis_rir_out_L, frames);
+  arm_fir_f32(&cmsis_rir[1], cmsis_buf_R, cmsis_rir_out_R, frames);
+  for (uint32_t i = 0; i < frames; i++)
+  {
+    cmsis_buf_L[i] = DSP_RIR_MAKEUP * ((1.0f - DSP_RIR_WET) * cmsis_buf_L[i] + DSP_RIR_WET * cmsis_rir_out_L[i]);
+    cmsis_buf_R[i] = DSP_RIR_MAKEUP * ((1.0f - DSP_RIR_WET) * cmsis_buf_R[i] + DSP_RIR_WET * cmsis_rir_out_R[i]);
+  }
+#endif
+
   for (uint32_t i = 0; i < frames; i++)
   {
     pcm[2 * i + 0] = (uint16_t)(int16_t)dsp_clip(cmsis_buf_L[i]);
     pcm[2 * i + 1] = (uint16_t)(int16_t)dsp_clip(cmsis_buf_R[i]);
   }
-#endif
 
   bench_cmsis_cycles = DWT->CYCCNT - _t0;
 
@@ -521,10 +616,29 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames)
 
   for (uint32_t i = 0; i < frames; i++)
   {
+#if DSP_ENABLE_GATE
+    /* Channel-linked noise gate, computed once per frame from the stereo-max
+       input level so both channels share one gain (see CMSIS path for notes). */
+    float gate_g;
+    {
+      float l = (float)(int16_t)pcm[2 * i + 0];
+      float r = (float)(int16_t)pcm[2 * i + 1];
+      float aL = l < 0.0f ? -l : l;
+      float aR = r < 0.0f ? -r : r;
+      float in = aL > aR ? aL : aR;
+      float c  = (in > gate_env) ? DSP_GATE_ATK : DSP_GATE_REL;
+      gate_env += c * (in - gate_env);
+      gate_g = (gate_env - DSP_GATE_THRESH) / DSP_GATE_KNEE;
+      if (gate_g < 0.0f) gate_g = 0.0f; else if (gate_g > 1.0f) gate_g = 1.0f;
+    }
+#endif
     for (uint32_t ch = 0; ch < 2; ch++)
     {
       float x = (float)(int16_t)pcm[2 * i + ch];
 
+#if DSP_ENABLE_GATE
+      x *= gate_g;
+#endif
 #if DSP_ENABLE_HPF
       float y = DSP_HPF_A * (hpf_y1[ch] + x - hpf_x1[ch]);
       hpf_x1[ch] = x;
@@ -555,6 +669,20 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames)
       }
       x = acc;
 #endif
+#if DSP_ENABLE_RIR
+      /* Room-acoustics convolution via a circular history buffer:
+         y[n] = sum_k h[k] * x[n-k], newest input at rir_idx going backwards. */
+      rir_hist[ch][rir_idx[ch]] = x;
+      float racc = 0.0f;
+      uint32_t p = rir_idx[ch];
+      for (uint32_t k = 0; k < DSP_RIR_NTAPS; k++)
+      {
+        racc += dsp_rir_kernel[k] * rir_hist[ch][p];
+        p = (p == 0) ? (DSP_RIR_NTAPS - 1) : (p - 1);
+      }
+      if (++rir_idx[ch] >= DSP_RIR_NTAPS) rir_idx[ch] = 0;
+      x = DSP_RIR_MAKEUP * ((1.0f - DSP_RIR_WET) * x + DSP_RIR_WET * racc);
+#endif
       pcm[2 * i + ch] = (uint16_t)(int16_t)dsp_clip(x);
     }
   }
@@ -562,6 +690,44 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames)
   bench_custom_cycles = DWT->CYCCNT - _t0;
 #endif /* DSP_USE_CMSIS */
 }
+
+#if DSP_ENABLE_RIR
+/**
+  * @brief  Generate a simple synthetic Room Impulse Response into
+  *         dsp_rir_kernel[]. Statistical room model: a unity direct path at
+  *         n = 0 followed by an exponentially-decaying white-noise tail whose
+  *         decay constant is set by the target RT60. Convolving audio with
+  *         this kernel reproduces the room's reverberation.
+  *
+  *         To use a *measured* RIR instead, drop your samples into
+  *         dsp_rir_kernel[] (normalised, h[0] = direct path) and skip this.
+  */
+static void DSP_RIR_Build(void)
+{
+  const float fs  = (float)AUDIO_FREQUENCY;
+  /* RT60 = time for the level to fall 60 dB. For env = exp(-n/tau),
+     60 dB => n = ln(1000)*tau = 6.9078*tau, so tau = RT60_samples / 6.9078. */
+  const float tau = (DSP_RIR_RT60_MS / 1000.0f) * fs / 6.9078f;
+  uint32_t rng = 0x1234567u;          /* deterministic xorshift32 seed */
+  float energy = 0.0f;
+
+  for (uint32_t n = 0; n < DSP_RIR_NTAPS; n++)
+  {
+    rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+    float white = (float)(int32_t)rng / 2147483648.0f;   /* ~[-1, 1) */
+    float env   = expf(-(float)n / tau);
+    dsp_rir_kernel[n] = white * env;
+    energy += dsp_rir_kernel[n] * dsp_rir_kernel[n];
+  }
+
+  /* Normalise the diffuse tail to a fixed energy so the wet signal stays at a
+     sensible level and does not clip, then force a unity direct path. */
+  float g = (energy > 0.0f) ? (1.0f / sqrtf(energy)) : 1.0f;
+  for (uint32_t n = 0; n < DSP_RIR_NTAPS; n++)
+    dsp_rir_kernel[n] *= g;
+  dsp_rir_kernel[0] = 1.0f;
+}
+#endif
 
 #if DSP_USE_CMSIS
 static void DSP_CMSIS_Init(void)
@@ -611,6 +777,14 @@ static void DSP_CMSIS_Init(void)
     cmsis_fir_coeffs[i] = 0.125f;
   arm_fir_init_f32(&cmsis_fir[0], DSP_CONV_NTAPS, cmsis_fir_coeffs, cmsis_fir_state[0], CMSIS_FRAMES);
   arm_fir_init_f32(&cmsis_fir[1], DSP_CONV_NTAPS, cmsis_fir_coeffs, cmsis_fir_state[1], CMSIS_FRAMES);
+#endif
+#if DSP_ENABLE_RIR
+  /* arm_fir_f32 expects coefficients in time-reversed order, so reverse the
+     room impulse response (which DSP_RIR_Build built in natural order). */
+  for (uint32_t i = 0; i < DSP_RIR_NTAPS; i++)
+    cmsis_rir_coeffs[i] = dsp_rir_kernel[DSP_RIR_NTAPS - 1 - i];
+  arm_fir_init_f32(&cmsis_rir[0], DSP_RIR_NTAPS, cmsis_rir_coeffs, cmsis_rir_state[0], CMSIS_FRAMES);
+  arm_fir_init_f32(&cmsis_rir[1], DSP_RIR_NTAPS, cmsis_rir_coeffs, cmsis_rir_state[1], CMSIS_FRAMES);
 #endif
 }
 #endif /* DSP_USE_CMSIS */
