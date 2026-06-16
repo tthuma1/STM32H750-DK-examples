@@ -83,7 +83,6 @@ Flash/debug with ST-LINK via the IDE or the `.launch` config.
 
 - **D3 SRAM is mandatory for the PDM buffer.** BDMA (the only DMA the SAI4
   domain uses) cannot access D1/D2 RAM. Don't move `recordPDMBuf`.
-- **Cache coherency:** the MPU marks the relevant region non-cacheable
-  (`MPU_Config`), so the callbacks don't do D-cache maintenance. If you change
-  the MPU/region attributes, you must add `SCB_InvalidateDCache_by_Addr` around
+- **Cache coherency:** D-cache is currently not enabled, but if you enable it,
+  you must add `SCB_InvalidateDCache_by_Addr` around
   the PDM reads (see commented variants in `nastavitve.md`).

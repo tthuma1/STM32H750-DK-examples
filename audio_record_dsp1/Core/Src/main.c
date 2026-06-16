@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "arm_math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,9 +34,9 @@
 /* USER CODE BEGIN PD */
 /* ---- DSP selection (independent, combinable; chained HPF -> LPF -> reverb -> conv) ---- */
 #define DSP_ENABLE_HPF      0
-#define DSP_ENABLE_LPF      0
+#define DSP_ENABLE_LPF      1
 #define DSP_ENABLE_REVERB   0
-#define DSP_ENABLE_CONV     1          /* FIR convolution (single echo) */
+#define DSP_ENABLE_CONV     0          /* FIR convolution (single echo) */
 
 /* ---- Tunables ---- */
 #define DSP_HPF_CUTOFF_HZ   5000.0f
@@ -53,6 +53,13 @@
 #define DSP_HPF_RC   (1.0f / (2.0f * DSP_PI * DSP_HPF_CUTOFF_HZ))
 #define DSP_HPF_A    (DSP_HPF_RC / (DSP_HPF_RC + DSP_DT))        /* high-pass alpha */
 #define DSP_REVERB_DELAY  (DSP_REVERB_DELAY_MS * AUDIO_FREQUENCY / 1000)
+
+/* ---- CMSIS-DSP comparison switch ---- */
+#define DSP_USE_CMSIS       0   /* 0 = custom hand-rolled, 1 = ARM CMSIS-DSP */
+/* Stereo frames per DSP_Process call (matches callback formula) */
+#define CMSIS_FRAMES        ((AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U)
+/* FIR state length = numTaps + blockSize - 1 */
+#define CMSIS_FIR_STATE_LEN (DSP_CONV_NTAPS + CMSIS_FRAMES - 1)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -65,6 +72,10 @@
 CRC_HandleTypeDef hcrc;
 
 /* USER CODE BEGIN PV */
+/* DWT cycle counts updated each DSP_Process call; read in debugger */
+volatile uint32_t bench_custom_cycles;
+volatile uint32_t bench_cmsis_cycles;
+
 /* PDM record buffer: SAI4 PDM uses BDMA, which can only access D3 SRAM
    (0x38000000). The .D3_SRAM section is mapped to RAM_D3 in the linker
    script. NOLOAD section: not zero-initialised at startup. */
@@ -86,11 +97,15 @@ static void MX_GPIO_Init(void);
 static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 static void DSP_Process(uint16_t *pcm, uint32_t frames);
+#if DSP_USE_CMSIS
+static void DSP_CMSIS_Init(void);
+#endif
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* --- Per-channel DSP state (index 0 = L, 1 = R), zero-initialised --- */
+/* --- Per-channel DSP state (index 0 = L, 1 = R), zero-initialised ---
+   Custom path and CMSIS reverb share these delay-line buffers.          */
 #if DSP_ENABLE_HPF
   static float hpf_x1[2], hpf_y1[2];              /* prev input, prev output */
 #endif
@@ -109,6 +124,30 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames);
     0.125f, 0.125f, 0.125f, 0.125f,
   };
   static float conv_hist[2][DSP_CONV_NTAPS];   /* last NTAPS inputs per channel */
+#endif
+
+/* --- CMSIS-DSP instances, state, and intermediate buffers --- */
+#if DSP_USE_CMSIS
+  /* Biquad state: 4 words per stage (x[n-1], x[n-2], y[n-1], y[n-2]) */
+  #if DSP_ENABLE_HPF
+    static arm_biquad_casd_df1_inst_f32 cmsis_hpf[2];
+    static float32_t cmsis_hpf_state[2][4];
+    static float32_t cmsis_hpf_coeffs[5];   /* filled by DSP_CMSIS_Init */
+  #endif
+  #if DSP_ENABLE_LPF
+    static arm_biquad_casd_df1_inst_f32 cmsis_lpf[2];
+    static float32_t cmsis_lpf_state[2][4];
+    static float32_t cmsis_lpf_coeffs[5];
+  #endif
+  #if DSP_ENABLE_CONV
+    static arm_fir_instance_f32 cmsis_fir[2];
+    static float32_t cmsis_fir_state[2][CMSIS_FIR_STATE_LEN];
+    static float32_t cmsis_fir_coeffs[DSP_CONV_NTAPS];
+    static float32_t cmsis_fir_out_L[CMSIS_FRAMES];  /* arm_fir_f32 needs separate in/out */
+    static float32_t cmsis_fir_out_R[CMSIS_FRAMES];
+  #endif
+  static float32_t cmsis_buf_L[CMSIS_FRAMES];  /* per-channel de-interleave scratch */
+  static float32_t cmsis_buf_R[CMSIS_FRAMES];
 #endif
 
 /* Clamp a float sample to the signed 16-bit PCM range. */
@@ -178,6 +217,15 @@ int main(void)
     Error_Handler();
   }
 
+  /* Initialise the CMSIS-DSP filter instances BEFORE starting the audio
+     streams. The record DMA below enables the PDM callbacks, whose first
+     interrupt can fire (and call DSP_Process -> arm_*) while the codec is
+     still being configured over I2C - i.e. before the filters exist. Doing
+     this here guarantees numStages/pCoeffs/pState are valid first. */
+#if DSP_USE_CMSIS
+  DSP_CMSIS_Init();
+#endif
+
   /* Start recording: circular DMA over the whole PDM buffer */
   if (BSP_AUDIO_IN_RecordPDM(1, (uint8_t *)recordPDMBuf, 2U * AUDIO_IN_PDM_BUFFER_SIZE) != BSP_ERROR_NONE)
   {
@@ -189,6 +237,11 @@ int main(void)
   {
     Error_Handler();
   }
+
+  /* Enable DWT cycle counter for DSP benchmarking */
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL   |= DWT_CTRL_CYCCNTENA_Msk;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -363,17 +416,86 @@ void BSP_AUDIO_OUT_Error_CallBack(uint32_t Interface)
 /**
   * @brief  Apply the enabled DSP effects in place to a block of interleaved
   *         stereo 16-bit PCM. Effects are chained HPF -> LPF -> reverb -> conv.
+  *         Two paths are available, selected by DSP_USE_CMSIS:
+  *           0 = custom hand-rolled sample loop
+  *           1 = ARM CMSIS-DSP block functions
+  *         DWT cycle counts are written to bench_custom_cycles / bench_cmsis_cycles.
   * @param  pcm    Pointer to interleaved (L,R,L,R...) PCM, treated as signed.
   * @param  frames Number of stereo frames in the block.
-  * @retval None
   */
 static void DSP_Process(uint16_t *pcm, uint32_t frames)
 {
+  uint32_t _t0 = DWT->CYCCNT;
+
+#if DSP_USE_CMSIS
+  /* ---- CMSIS-DSP path ----
+     Convert int16 → float32 and de-interleave to per-channel buffers,
+     apply block filters, then re-interleave back to int16. */
+  for (uint32_t i = 0; i < frames; i++)
+  {
+    cmsis_buf_L[i] = (float32_t)(int16_t)pcm[2 * i + 0];
+    cmsis_buf_R[i] = (float32_t)(int16_t)pcm[2 * i + 1];
+  }
+
+#if DSP_ENABLE_HPF
+  /* 1-stage biquad HPF, in-place.
+     CMSIS DF1: y[n] = b0*x[n]+b1*x[n-1]+b2*x[n-2] + a1*y[n-1]+a2*y[n-2]
+     Coeffs: b0=α, b1=-α, b2=0, a1=α, a2=0  (α = DSP_HPF_A) */
+  arm_biquad_cascade_df1_f32(&cmsis_hpf[0], cmsis_buf_L, cmsis_buf_L, frames);
+  arm_biquad_cascade_df1_f32(&cmsis_hpf[1], cmsis_buf_R, cmsis_buf_R, frames);
+#endif
+
+#if DSP_ENABLE_LPF
+  /* 1-stage biquad LPF, in-place.
+     Coeffs: b0=α, b1=0, b2=0, a1=(1-α), a2=0  (α = DSP_LPF_A) */
+  arm_biquad_cascade_df1_f32(&cmsis_lpf[0], cmsis_buf_L, cmsis_buf_L, frames);
+  arm_biquad_cascade_df1_f32(&cmsis_lpf[1], cmsis_buf_R, cmsis_buf_R, frames);
+#endif
+
+#if DSP_ENABLE_REVERB
+  /* No CMSIS equivalent for the delay-line reverb; use the same scalar loop
+     but operating on the float buffers rather than int16. */
+  for (uint32_t i = 0; i < frames; i++)
+  {
+    float32_t d;
+    d = reverb_buf[0][reverb_idx[0]];
+    cmsis_buf_L[i] += DSP_REVERB_FEEDBACK * d;
+    reverb_buf[0][reverb_idx[0]] = cmsis_buf_L[i];
+    if (++reverb_idx[0] >= DSP_REVERB_DELAY) reverb_idx[0] = 0;
+
+    d = reverb_buf[1][reverb_idx[1]];
+    cmsis_buf_R[i] += DSP_REVERB_FEEDBACK * d;
+    reverb_buf[1][reverb_idx[1]] = cmsis_buf_R[i];
+    if (++reverb_idx[1] >= DSP_REVERB_DELAY) reverb_idx[1] = 0;
+  }
+#endif
+
+#if DSP_ENABLE_CONV
+  /* arm_fir_f32 does not support in-place; output goes to separate scratch. */
+  arm_fir_f32(&cmsis_fir[0], cmsis_buf_L, cmsis_fir_out_L, frames);
+  arm_fir_f32(&cmsis_fir[1], cmsis_buf_R, cmsis_fir_out_R, frames);
+  for (uint32_t i = 0; i < frames; i++)
+  {
+    pcm[2 * i + 0] = (uint16_t)(int16_t)dsp_clip(cmsis_fir_out_L[i]);
+    pcm[2 * i + 1] = (uint16_t)(int16_t)dsp_clip(cmsis_fir_out_R[i]);
+  }
+#else
+  for (uint32_t i = 0; i < frames; i++)
+  {
+    pcm[2 * i + 0] = (uint16_t)(int16_t)dsp_clip(cmsis_buf_L[i]);
+    pcm[2 * i + 1] = (uint16_t)(int16_t)dsp_clip(cmsis_buf_R[i]);
+  }
+#endif
+
+  bench_cmsis_cycles = DWT->CYCCNT - _t0;
+
+#else  /* ---- Custom hand-rolled path ---- */
+
   for (uint32_t i = 0; i < frames; i++)
   {
     for (uint32_t ch = 0; ch < 2; ch++)
     {
-      float x = (float)(int16_t)pcm[2 * i + ch];   /* interpret as signed PCM */
+      float x = (float)(int16_t)pcm[2 * i + ch];
 
 #if DSP_ENABLE_HPF
       float y = DSP_HPF_A * (hpf_y1[ch] + x - hpf_x1[ch]);
@@ -387,20 +509,17 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames)
 #endif
 #if DSP_ENABLE_REVERB
       float d = reverb_buf[ch][reverb_idx[ch]];
-      float out = x + DSP_REVERB_FEEDBACK * d;       /* y[n] = x[n] + g*y[n-D] */
+      float out = x + DSP_REVERB_FEEDBACK * d;
       reverb_buf[ch][reverb_idx[ch]] = out;
       if (++reverb_idx[ch] >= DSP_REVERB_DELAY) reverb_idx[ch] = 0;
       x = out;
 #endif
 #if DSP_ENABLE_CONV
-      /* FIR smoothing: shift newest input into hist[0], then a plain
-         multiply/add loop over the kernel taps. */
       for (uint32_t t = DSP_CONV_NTAPS - 1; t > 0; t--)
       {
         conv_hist[ch][t] = conv_hist[ch][t - 1];
       }
       conv_hist[ch][0] = x;
-
       float acc = 0.0f;
       for (uint32_t t = 0; t < DSP_CONV_NTAPS; t++)
       {
@@ -411,7 +530,45 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames)
       pcm[2 * i + ch] = (uint16_t)(int16_t)dsp_clip(x);
     }
   }
+
+  bench_custom_cycles = DWT->CYCCNT - _t0;
+#endif /* DSP_USE_CMSIS */
 }
+
+#if DSP_USE_CMSIS
+static void DSP_CMSIS_Init(void)
+{
+  /* Initialise biquad and FIR instances with coefficient/state arrays.
+     CMSIS DF1 sign convention: a1, a2 are the POSITIVE feedback coefficients
+     (y[n] = b0*x[n]+b1*x[n-1]+b2*x[n-2] + a1*y[n-1]+a2*y[n-2]).  */
+#if DSP_ENABLE_HPF
+  cmsis_hpf_coeffs[0] =  DSP_HPF_A;   /* b0 */
+  cmsis_hpf_coeffs[1] = -DSP_HPF_A;   /* b1 */
+  cmsis_hpf_coeffs[2] =  0.0f;        /* b2 */
+  cmsis_hpf_coeffs[3] =  DSP_HPF_A;   /* a1 (positive in CMSIS) */
+  cmsis_hpf_coeffs[4] =  0.0f;        /* a2 */
+  arm_biquad_cascade_df1_init_f32(&cmsis_hpf[0], 1, cmsis_hpf_coeffs, cmsis_hpf_state[0]);
+  arm_biquad_cascade_df1_init_f32(&cmsis_hpf[1], 1, cmsis_hpf_coeffs, cmsis_hpf_state[1]);
+#endif
+#if DSP_ENABLE_LPF
+  cmsis_lpf_coeffs[0] =  DSP_LPF_A;          /* b0 */
+  cmsis_lpf_coeffs[1] =  0.0f;               /* b1 */
+  cmsis_lpf_coeffs[2] =  0.0f;               /* b2 */
+  cmsis_lpf_coeffs[3] =  1.0f - DSP_LPF_A;  /* a1 */
+  cmsis_lpf_coeffs[4] =  0.0f;               /* a2 */
+  arm_biquad_cascade_df1_init_f32(&cmsis_lpf[0], 1, cmsis_lpf_coeffs, cmsis_lpf_state[0]);
+  arm_biquad_cascade_df1_init_f32(&cmsis_lpf[1], 1, cmsis_lpf_coeffs, cmsis_lpf_state[1]);
+#endif
+#if DSP_ENABLE_CONV
+  /* Coefficients in reverse order as required by arm_fir_f32.
+     All taps are equal so the order does not matter here. */
+  for (uint32_t i = 0; i < DSP_CONV_NTAPS; i++)
+    cmsis_fir_coeffs[i] = 0.125f;
+  arm_fir_init_f32(&cmsis_fir[0], DSP_CONV_NTAPS, cmsis_fir_coeffs, cmsis_fir_state[0], CMSIS_FRAMES);
+  arm_fir_init_f32(&cmsis_fir[1], DSP_CONV_NTAPS, cmsis_fir_coeffs, cmsis_fir_state[1], CMSIS_FRAMES);
+#endif
+}
+#endif /* DSP_USE_CMSIS */
 /* USER CODE END 4 */
 
  /* MPU Configuration */
