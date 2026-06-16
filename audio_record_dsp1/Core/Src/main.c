@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "arm_math.h"
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,14 +34,14 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 /* ---- DSP selection (independent, combinable; chained HPF -> LPF -> reverb -> conv) ---- */
-#define DSP_ENABLE_HPF      0
+#define DSP_ENABLE_HPF      1
 #define DSP_ENABLE_LPF      0
 #define DSP_ENABLE_REVERB   0
-#define DSP_ENABLE_CONV     1          /* FIR convolution (single echo) */
+#define DSP_ENABLE_CONV     0          /* FIR convolution (single echo) */
 
 /* ---- Tunables ---- */
 #define DSP_HPF_CUTOFF_HZ   5000.0f
-#define DSP_LPF_CUTOFF_HZ   5000.0f
+#define DSP_LPF_CUTOFF_HZ   2000.0f
 #define DSP_REVERB_DELAY_MS 80
 #define DSP_REVERB_FEEDBACK 0.40f      /* |g| < 1 for stability */
 #define DSP_CONV_NTAPS      8          /* FIR smoothing: 8-tap moving average */
@@ -468,16 +469,13 @@ static void DSP_Process(uint16_t *pcm, uint32_t frames)
   }
 
 #if DSP_ENABLE_HPF
-  /* 1-stage biquad HPF, in-place.
-     CMSIS DF1: y[n] = b0*x[n]+b1*x[n-1]+b2*x[n-2] + a1*y[n-1]+a2*y[n-2]
-     Coeffs: b0=α, b1=-α, b2=0, a1=α, a2=0  (α = DSP_HPF_A) */
+  /* 2nd-order Butterworth HPF, in-place (bilinear-transform biquad). */
   arm_biquad_cascade_df1_f32(&cmsis_hpf[0], cmsis_buf_L, cmsis_buf_L, frames);
   arm_biquad_cascade_df1_f32(&cmsis_hpf[1], cmsis_buf_R, cmsis_buf_R, frames);
 #endif
 
 #if DSP_ENABLE_LPF
-  /* 1-stage biquad LPF, in-place.
-     Coeffs: b0=α, b1=0, b2=0, a1=(1-α), a2=0  (α = DSP_LPF_A) */
+  /* 2nd-order Butterworth LPF, in-place (bilinear-transform biquad). */
   arm_biquad_cascade_df1_f32(&cmsis_lpf[0], cmsis_buf_L, cmsis_buf_L, frames);
   arm_biquad_cascade_df1_f32(&cmsis_lpf[1], cmsis_buf_R, cmsis_buf_R, frames);
 #endif
@@ -572,20 +570,37 @@ static void DSP_CMSIS_Init(void)
      CMSIS DF1 sign convention: a1, a2 are the POSITIVE feedback coefficients
      (y[n] = b0*x[n]+b1*x[n-1]+b2*x[n-2] + a1*y[n-1]+a2*y[n-2]).  */
 #if DSP_ENABLE_HPF
-  cmsis_hpf_coeffs[0] =  DSP_HPF_A;   /* b0 */
-  cmsis_hpf_coeffs[1] = -DSP_HPF_A;   /* b1 */
-  cmsis_hpf_coeffs[2] =  0.0f;        /* b2 */
-  cmsis_hpf_coeffs[3] =  DSP_HPF_A;   /* a1 (positive in CMSIS) */
-  cmsis_hpf_coeffs[4] =  0.0f;        /* a2 */
+  /* 2nd-order Butterworth HPF via bilinear transform.
+     K = tan(π·fc/fs);  norm = 1 + √2·K + K²
+     b0 =  1/norm, b1 = -2/norm, b2 = 1/norm
+     a1_std = 2(K²-1)/norm → CMSIS a1 = -a1_std
+     a2_std = (1-√2·K+K²)/norm → CMSIS a2 = -a2_std */
+  {
+    float32_t K    = tanf(DSP_PI * DSP_HPF_CUTOFF_HZ / (float32_t)AUDIO_FREQUENCY);
+    float32_t K2   = K * K;
+    float32_t norm = 1.0f + 1.41421356f * K + K2;
+    cmsis_hpf_coeffs[0] =  1.0f / norm;
+    cmsis_hpf_coeffs[1] = -2.0f / norm;
+    cmsis_hpf_coeffs[2] =  1.0f / norm;
+    cmsis_hpf_coeffs[3] =  2.0f * (1.0f - K2) / norm;
+    cmsis_hpf_coeffs[4] = -(1.0f - 1.41421356f * K + K2) / norm;
+  }
   arm_biquad_cascade_df1_init_f32(&cmsis_hpf[0], 1, cmsis_hpf_coeffs, cmsis_hpf_state[0]);
   arm_biquad_cascade_df1_init_f32(&cmsis_hpf[1], 1, cmsis_hpf_coeffs, cmsis_hpf_state[1]);
 #endif
 #if DSP_ENABLE_LPF
-  cmsis_lpf_coeffs[0] =  DSP_LPF_A;          /* b0 */
-  cmsis_lpf_coeffs[1] =  0.0f;               /* b1 */
-  cmsis_lpf_coeffs[2] =  0.0f;               /* b2 */
-  cmsis_lpf_coeffs[3] =  1.0f - DSP_LPF_A;  /* a1 */
-  cmsis_lpf_coeffs[4] =  0.0f;               /* a2 */
+  /* 2nd-order Butterworth LPF via bilinear transform.
+     b0 = K²/norm, b1 = 2K²/norm, b2 = K²/norm  (same norm as HPF at same fc) */
+  {
+    float32_t K    = tanf(DSP_PI * DSP_LPF_CUTOFF_HZ / (float32_t)AUDIO_FREQUENCY);
+    float32_t K2   = K * K;
+    float32_t norm = 1.0f + 1.41421356f * K + K2;
+    cmsis_lpf_coeffs[0] =  K2 / norm;
+    cmsis_lpf_coeffs[1] =  2.0f * K2 / norm;
+    cmsis_lpf_coeffs[2] =  K2 / norm;
+    cmsis_lpf_coeffs[3] =  2.0f * (1.0f - K2) / norm;
+    cmsis_lpf_coeffs[4] = -(1.0f - 1.41421356f * K + K2) / norm;
+  }
   arm_biquad_cascade_df1_init_f32(&cmsis_lpf[0], 1, cmsis_lpf_coeffs, cmsis_lpf_state[0]);
   arm_biquad_cascade_df1_init_f32(&cmsis_lpf[1], 1, cmsis_lpf_coeffs, cmsis_lpf_state[1]);
 #endif
