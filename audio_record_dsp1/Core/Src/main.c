@@ -34,9 +34,9 @@
 /* USER CODE BEGIN PD */
 /* ---- DSP selection (independent, combinable; chained HPF -> LPF -> reverb -> conv) ---- */
 #define DSP_ENABLE_HPF      0
-#define DSP_ENABLE_LPF      1
+#define DSP_ENABLE_LPF      0
 #define DSP_ENABLE_REVERB   0
-#define DSP_ENABLE_CONV     0          /* FIR convolution (single echo) */
+#define DSP_ENABLE_CONV     1          /* FIR convolution (single echo) */
 
 /* ---- Tunables ---- */
 #define DSP_HPF_CUTOFF_HZ   5000.0f
@@ -54,8 +54,12 @@
 #define DSP_HPF_A    (DSP_HPF_RC / (DSP_HPF_RC + DSP_DT))        /* high-pass alpha */
 #define DSP_REVERB_DELAY  (DSP_REVERB_DELAY_MS * AUDIO_FREQUENCY / 1000)
 
+/* ---- Cache enables ---- */
+#define ENABLE_ICACHE       1
+#define ENABLE_DCACHE       1
+
 /* ---- CMSIS-DSP comparison switch ---- */
-#define DSP_USE_CMSIS       0   /* 0 = custom hand-rolled, 1 = ARM CMSIS-DSP */
+#define DSP_USE_CMSIS       1   /* 0 = custom hand-rolled, 1 = ARM CMSIS-DSP */
 /* Stereo frames per DSP_Process call (matches callback formula) */
 #define CMSIS_FRAMES        ((AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U)
 /* FIR state length = numTaps + blockSize - 1 */
@@ -167,6 +171,12 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+#if ENABLE_ICACHE
+  SCB_EnableICache();
+#endif
+#if ENABLE_DCACHE
+  SCB_EnableDCache();
+#endif
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -366,11 +376,21 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
 {
   if (Instance == 1U)
   {
+#if ENABLE_DCACHE
+    SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE / 2U],
+                                 sizeof(recordPDMBuf) / 2U);
+#endif
+
     BSP_AUDIO_IN_PDMToPCM(Instance,
                           (uint16_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE / 2U],
                           &RecPlayback[playbackPtr]);
 
     DSP_Process(&RecPlayback[playbackPtr], (AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U);
+
+#if ENABLE_DCACHE
+    SCB_CleanDCache_by_Addr((uint32_t *)&RecPlayback[playbackPtr],
+                            AUDIO_IN_PDM_BUFFER_SIZE / 4U);
+#endif
 
     playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U;
     if (playbackPtr >= AUDIO_BUFF_SIZE)
@@ -389,11 +409,21 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
 {
   if (Instance == 1U)
   {
+#if ENABLE_DCACHE
+    SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[0],
+                                 sizeof(recordPDMBuf) / 2U);
+#endif
+
     BSP_AUDIO_IN_PDMToPCM(Instance,
                           (uint16_t *)&recordPDMBuf[0],
                           &RecPlayback[playbackPtr]);
 
     DSP_Process(&RecPlayback[playbackPtr], (AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U);
+
+#if ENABLE_DCACHE
+    SCB_CleanDCache_by_Addr((uint32_t *)&RecPlayback[playbackPtr],
+                            AUDIO_IN_PDM_BUFFER_SIZE / 4U);
+#endif
 
     playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U;
     if (playbackPtr >= AUDIO_BUFF_SIZE)
