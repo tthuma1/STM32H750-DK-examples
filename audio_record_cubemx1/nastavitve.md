@@ -179,7 +179,7 @@ V stm32h7xx_hal_conf.h odkomentiraj:
 #define HAL_SAI_MODULE_ENABLED
 ```
 
-v Core/Src/stm32h7xx.c dodaj v USER CODE BEGIN 1:
+v Core/Src/stm32h7xx_it.c dodaj v USER CODE BEGIN 1:
 ```
 /**
   * @brief  This function handles DMA2 Stream 1 interrupt request
