@@ -15,13 +15,20 @@
 #include <math.h>
 
 /* Derived, compile-time-constant coefficients -------------------------------*/
-/* ---- Derived, compile-time-constant one-pole coefficients (RC model) ---- */
 #define DSP_PI       3.14159265358979f
-#define DSP_DT       (1.0f / (float)AUDIO_FREQUENCY)
-#define DSP_LPF_RC   (1.0f / (2.0f * DSP_PI * DSP_LPF_CUTOFF_HZ))
-#define DSP_LPF_A    (DSP_DT / (DSP_LPF_RC + DSP_DT))            /* low-pass alpha */
-#define DSP_HPF_RC   (1.0f / (2.0f * DSP_PI * DSP_HPF_CUTOFF_HZ))
-#define DSP_HPF_A    (DSP_HPF_RC / (DSP_HPF_RC + DSP_DT))        /* high-pass alpha */
+/* ---- First-order bilinear-transform (Tustin) filter coefficients ----
+   Prewarped cutoff  K = tan(pi*fc/fs).  The tanf() argument is a compile-time
+   constant, so an optimising build folds these to literals (no runtime cost).
+   Difference equations used in the custom path:
+     LPF:  y[n] = b0*(x[n] + x[n-1]) - a1*y[n-1]   (b1 = +b0)
+     HPF:  y[n] = b0*(x[n] - x[n-1]) - a1*y[n-1]   (b1 = -b0)
+   with shared denominator a1 = (K - 1)/(K + 1). */
+#define DSP_LPF_K    tanf(DSP_PI * DSP_LPF_CUTOFF_HZ / (float)AUDIO_FREQUENCY)
+#define DSP_LPF_B0   (DSP_LPF_K / (1.0f + DSP_LPF_K))
+#define DSP_LPF_A1   ((DSP_LPF_K - 1.0f) / (DSP_LPF_K + 1.0f))
+#define DSP_HPF_K    tanf(DSP_PI * DSP_HPF_CUTOFF_HZ / (float)AUDIO_FREQUENCY)
+#define DSP_HPF_B0   (1.0f / (1.0f + DSP_HPF_K))
+#define DSP_HPF_A1   ((DSP_HPF_K - 1.0f) / (DSP_HPF_K + 1.0f))
 #define DSP_REVERB_DELAY  (DSP_REVERB_DELAY_MS * AUDIO_FREQUENCY / 1000)
 /* RIR length in taps (compile-time constant: ms * fs / 1000) */
 #define DSP_RIR_NTAPS     (DSP_RIR_LEN_MS * AUDIO_FREQUENCY / 1000)
@@ -53,7 +60,7 @@ volatile uint32_t bench_cmsis_cycles;
   static float hpf_x1[2], hpf_y1[2];              /* prev input, prev output */
 #endif
 #if DSP_ENABLE_LPF
-  static float lpf_y1[2];                         /* prev output */
+  static float lpf_x1[2], lpf_y1[2];              /* prev input, prev output */
 #endif
 #if DSP_ENABLE_REVERB
   static float reverb_buf[2][DSP_REVERB_DELAY];   /* one delay line per channel */
@@ -228,6 +235,13 @@ void DSP_Process(uint16_t *pcm, uint32_t frames)
 
 #else  /* ---- Custom hand-rolled path ---- */
 
+#if DSP_ENABLE_HPF
+  const float hpf_b0 = DSP_HPF_B0, hpf_a1 = DSP_HPF_A1;   /* b1 = -b0 */
+#endif
+#if DSP_ENABLE_LPF
+  const float lpf_b0 = DSP_LPF_B0, lpf_a1 = DSP_LPF_A1;   /* b1 = +b0 */
+#endif
+
   for (uint32_t i = 0; i < frames; i++)
   {
 #if DSP_ENABLE_GATE
@@ -254,13 +268,17 @@ void DSP_Process(uint16_t *pcm, uint32_t frames)
       x *= gate_g;
 #endif
 #if DSP_ENABLE_HPF
-      float y = DSP_HPF_A * (hpf_y1[ch] + x - hpf_x1[ch]);
+      /* First-order Butterworth HPF (bilinear transform):
+         y[n] = b0*(x[n] - x[n-1]) - a1*y[n-1]. */
+      hpf_y1[ch] = hpf_b0 * (x - hpf_x1[ch]) - hpf_a1 * hpf_y1[ch];
       hpf_x1[ch] = x;
-      hpf_y1[ch] = y;
-      x = y;
+      x = hpf_y1[ch];
 #endif
 #if DSP_ENABLE_LPF
-      lpf_y1[ch] += DSP_LPF_A * (x - lpf_y1[ch]);
+      /* First-order Butterworth LPF (bilinear transform):
+         y[n] = b0*(x[n] + x[n-1]) - a1*y[n-1]. */
+      lpf_y1[ch] = lpf_b0 * (x + lpf_x1[ch]) - lpf_a1 * lpf_y1[ch];
+      lpf_x1[ch] = x;
       x = lpf_y1[ch];
 #endif
 #if DSP_ENABLE_REVERB

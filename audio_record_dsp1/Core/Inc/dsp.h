@@ -24,14 +24,14 @@ extern "C" {
 /* ---- DSP selection (independent, combinable; chained GATE -> HPF -> LPF -> reverb -> conv -> RIR) ---- */
 #define DSP_ENABLE_GATE     0         /* noise gate / downward expander (runs first in the chain) */
 #define DSP_ENABLE_HPF      0
-#define DSP_ENABLE_LPF      0
+#define DSP_ENABLE_LPF      1
 #define DSP_ENABLE_REVERB   0
 #define DSP_ENABLE_CONV     0          /* FIR convolution (single echo) */
-#define DSP_ENABLE_RIR      1          /* Room Impulse Response convolution (room acoustics) */
+#define DSP_ENABLE_RIR      0          /* Room Impulse Response convolution (room acoustics) */
 
 /* ---- Tunables ---- */
 #define DSP_HPF_CUTOFF_HZ   5000.0f
-#define DSP_LPF_CUTOFF_HZ   2000.0f
+#define DSP_LPF_CUTOFF_HZ   5000.0f
 #define DSP_REVERB_DELAY_MS 80
 #define DSP_REVERB_FEEDBACK 0.40f      /* |g| < 1 for stability */
 #define DSP_CONV_NTAPS      8          /* FIR smoothing: 8-tap moving average */
