@@ -31,10 +31,12 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -57,12 +59,7 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 
 /* USER CODE BEGIN Private defines */
-#define AUDIO_BUFFER_SIZE 2048
-#define SAMPLE_RATE 96000.0f
-#define TONE_FREQ   100.0f
-#define AMPLITUDE   30000     // int16 max is 32767
-#define TWO_PI      6.28318530718f
-#define PHASE_INC   (TWO_PI * TONE_FREQ / SAMPLE_RATE)
+
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

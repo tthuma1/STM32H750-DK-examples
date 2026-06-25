@@ -21,21 +21,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "stm32h750b_discovery_audio.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum {
-  BUFFER_OFFSET_NONE = 0,
-  BUFFER_OFFSET_HALF,
-  BUFFER_OFFSET_FULL,
-}BUFFER_StateTypeDef;
 
-typedef struct {
-  uint8_t buff[AUDIO_BUFFER_SIZE];
-  BUFFER_StateTypeDef state;
-}AUDIO_BufferTypeDef;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -50,24 +41,15 @@ typedef struct {
 
 /* Private variables ---------------------------------------------------------*/
 
-CRC_HandleTypeDef hcrc;
-
 /* USER CODE BEGIN PV */
-ALIGN_32BYTES (static AUDIO_BufferTypeDef buffer_ctl);
-BSP_AUDIO_Init_t AudioPlayInit;
 
-static float phase = 0.0f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MPU_Config(void);
-static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
-static void CPU_CACHE_Enable(void);
 
-void AUDIO_Process(void);
-void GenerateTone(int16_t *dst, uint32_t samples);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -95,7 +77,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  CPU_CACHE_Enable();
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -107,19 +89,6 @@ int main(void)
 
   /* Initialize all configured peripherals */
   /* USER CODE BEGIN 2 */
-  AudioPlayInit.Device = AUDIO_OUT_DEVICE_HEADPHONE;
-  AudioPlayInit.ChannelsNbr = 2;
-  AudioPlayInit.SampleRate = SAMPLE_RATE;
-  AudioPlayInit.BitsPerSample = AUDIO_RESOLUTION_16B;
-  AudioPlayInit.Volume = 40;
-
-  if(BSP_AUDIO_OUT_Init(0, &AudioPlayInit) != 0)
-  {
-  }
-
-  GenerateTone((int16_t *)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE / 4);
-  SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE);
-  BSP_AUDIO_OUT_Play(0, (uint8_t *)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE);
 
   /* USER CODE END 2 */
 
@@ -127,7 +96,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    AUDIO_Process();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -185,125 +153,7 @@ void SystemClock_Config(void)
   }
 }
 
-/**
-  * @brief CRC Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_CRC_Init(void)
-{
-
-  /* USER CODE BEGIN CRC_Init 0 */
-
-  /* USER CODE END CRC_Init 0 */
-
-  /* USER CODE BEGIN CRC_Init 1 */
-
-  /* USER CODE END CRC_Init 1 */
-  hcrc.Instance = CRC;
-  hcrc.Init.DefaultPolynomialUse = DEFAULT_POLYNOMIAL_ENABLE;
-  hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_ENABLE;
-  hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_NONE;
-  hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_DISABLE;
-  hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_BYTES;
-  if (HAL_CRC_Init(&hcrc) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  __HAL_CRC_DR_RESET(&hcrc);
-  /* USER CODE BEGIN CRC_Init 2 */
-
-  /* USER CODE END CRC_Init 2 */
-
-}
-
 /* USER CODE BEGIN 4 */
-void AUDIO_Process(void)
-{
-  if (buffer_ctl.state == BUFFER_OFFSET_HALF)
-  {
-    GenerateTone((int16_t *)&buffer_ctl.buff[0], (AUDIO_BUFFER_SIZE / 2) / 4);
-    buffer_ctl.state = BUFFER_OFFSET_NONE;
-    SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE / 2);
-  }
-
-  if (buffer_ctl.state == BUFFER_OFFSET_FULL)
-  {
-    GenerateTone((int16_t *)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], (AUDIO_BUFFER_SIZE / 2) / 4);
-    buffer_ctl.state = BUFFER_OFFSET_NONE;
-    SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], AUDIO_BUFFER_SIZE / 2);
-  }
-}
-
-
-
-/*------------------------------------------------------------------------------
-       Callbacks implementation:
-           the callbacks API are defined __weak in the stm32769i_discovery_audio.c file
-           and their implementation should be done the user code if they are needed.
-           Below some examples of callback implementations.
-  ----------------------------------------------------------------------------*/
-/**
-  * @brief  Manages the full Transfer complete event.
-  * @param  None
-  * @retval None
-  */
-void BSP_AUDIO_OUT_TransferComplete_CallBack(uint32_t Interface)
-{
-  /* allows AUDIO_Process() to refill 2nd part of the buffer  */
-  buffer_ctl.state = BUFFER_OFFSET_FULL;
-}
-
-/**
-  * @brief  Manages the DMA Half Transfer complete event.
-  * @param  None
-  * @retval None
-  */
-void BSP_AUDIO_OUT_HalfTransfer_CallBack(uint32_t Interface)
-{
-  /* allows AUDIO_Process() to refill 1st part of the buffer  */
-  buffer_ctl.state = BUFFER_OFFSET_HALF;
-}
-
-/**
-  * @brief  Manages the DMA FIFO error event.
-  * @param  Instance Audio out instance
-  * @retval None
-  */
-void BSP_AUDIO_OUT_Error_CallBack(uint32_t Interface)
-{
-  Error_Handler();
-}
-
-
-void GenerateTone(int16_t *dst, uint32_t samples)
-{
-  for (uint32_t i = 0; i < samples; i++)
-  {
-    int16_t s = (int16_t)(AMPLITUDE * sinf(phase));
-    phase += PHASE_INC;
-    if (phase >= TWO_PI)
-      phase -= TWO_PI;
-
-    // stereo: L and R
-    dst[2*i]     = s;
-    dst[2*i + 1] = s;
-  }
-}
-
-/**
-  * @brief  CPU L1-Cache enable.
-  * @param  None
-  * @retval None
-  */
-static void CPU_CACHE_Enable(void)
-{
-  /* Enable I-Cache */
-  SCB_EnableICache();
-
-  /* Enable D-Cache */
-  SCB_EnableDCache();
-}
 
 /* USER CODE END 4 */
 
