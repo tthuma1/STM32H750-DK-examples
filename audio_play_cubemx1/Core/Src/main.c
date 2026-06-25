@@ -18,15 +18,25 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "pdm2pcm.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stm32h750b_discovery_audio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef enum {
+  BUFFER_OFFSET_NONE = 0,
+  BUFFER_OFFSET_HALF,
+  BUFFER_OFFSET_FULL,
+}BUFFER_StateTypeDef;
 
+typedef struct {
+  uint8_t buff[AUDIO_BUFFER_SIZE];
+  BUFFER_StateTypeDef state;
+}AUDIO_BufferTypeDef;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -41,15 +51,23 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-/* USER CODE BEGIN PV */
+CRC_HandleTypeDef hcrc;
 
+/* USER CODE BEGIN PV */
+ALIGN_32BYTES (static AUDIO_BufferTypeDef  buffer_ctl);
+BSP_AUDIO_Init_t AudioOutInit;
+
+static float phase = 0.0f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MPU_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
-
+void AUDIO_Process(void);
+void GenerateTone(int16_t *dst, uint32_t samples);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -65,7 +83,11 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  /* Enable I-Cache */
+  SCB_EnableICache();
 
+  /* Enable D-Cache */
+  SCB_EnableDCache();
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -88,14 +110,32 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_CRC_Init();
+  MX_PDM2PCM_Init();
   /* USER CODE BEGIN 2 */
+  AudioOutInit.Device = AUDIO_OUT_DEVICE_HEADPHONE;
+  AudioOutInit.ChannelsNbr = 2;
+  AudioOutInit.SampleRate = SAMPLE_RATE;
+  AudioOutInit.BitsPerSample = AUDIO_RESOLUTION_16B;
+  AudioOutInit.Volume = 40;
 
+  /* Instance 0: WM8994 codec via SAI2 + DMA2, line out / headphone */
+  if (BSP_AUDIO_OUT_Init(0, &AudioOutInit) != BSP_ERROR_NONE)
+  {
+    Error_Handler();
+  }
+
+  GenerateTone((int16_t *)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE / 4);
+  SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE);
+  BSP_AUDIO_OUT_Play(0, (uint8_t *)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    AUDIO_Process();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -153,7 +193,122 @@ void SystemClock_Config(void)
   }
 }
 
+/**
+  * @brief CRC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CRC_Init(void)
+{
+
+  /* USER CODE BEGIN CRC_Init 0 */
+
+  /* USER CODE END CRC_Init 0 */
+
+  /* USER CODE BEGIN CRC_Init 1 */
+
+  /* USER CODE END CRC_Init 1 */
+  hcrc.Instance = CRC;
+  hcrc.Init.DefaultPolynomialUse = DEFAULT_POLYNOMIAL_ENABLE;
+  hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_ENABLE;
+  hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_NONE;
+  hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_DISABLE;
+  hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_BYTES;
+  if (HAL_CRC_Init(&hcrc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  __HAL_CRC_DR_RESET(&hcrc);
+  /* USER CODE BEGIN CRC_Init 2 */
+
+  /* USER CODE END CRC_Init 2 */
+
+}
+
+/**
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+
+  /* USER CODE END MX_GPIO_Init_1 */
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOH_CLK_ENABLE();
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+  /* USER CODE END MX_GPIO_Init_2 */
+}
+
 /* USER CODE BEGIN 4 */
+void AUDIO_Process(void)
+{
+  if (buffer_ctl.state == BUFFER_OFFSET_HALF)
+  {
+    GenerateTone((int16_t *)&buffer_ctl.buff[0], (AUDIO_BUFFER_SIZE / 2) / 4);
+    buffer_ctl.state = BUFFER_OFFSET_NONE;
+    SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE / 2);
+  }
+
+  if (buffer_ctl.state == BUFFER_OFFSET_FULL)
+  {
+    GenerateTone((int16_t *)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], (AUDIO_BUFFER_SIZE / 2) / 4);
+    buffer_ctl.state = BUFFER_OFFSET_NONE;
+    SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], AUDIO_BUFFER_SIZE / 2);
+  }
+}
+
+/**
+  * @brief  Manages the full Transfer complete event.
+  * @param  None
+  * @retval None
+  */
+void BSP_AUDIO_OUT_TransferComplete_CallBack(uint32_t Interface)
+{
+  /* allows AUDIO_Process() to refill 2nd part of the buffer  */
+  buffer_ctl.state = BUFFER_OFFSET_FULL;
+}
+
+/**
+  * @brief  Manages the DMA Half Transfer complete event.
+  * @param  None
+  * @retval None
+  */
+void BSP_AUDIO_OUT_HalfTransfer_CallBack(uint32_t Interface)
+{
+  /* allows AUDIO_Process() to refill 1st part of the buffer  */
+  buffer_ctl.state = BUFFER_OFFSET_HALF;
+}
+
+/**
+  * @brief  Manages the DMA FIFO error event.
+  * @param  Instance Audio out instance
+  * @retval None
+  */
+void BSP_AUDIO_OUT_Error_CallBack(uint32_t Interface)
+{
+  Error_Handler();
+}
+
+
+void GenerateTone(int16_t *dst, uint32_t samples)
+{
+  for (uint32_t i = 0; i < samples; i++)
+  {
+    int16_t s = (int16_t)(AMPLITUDE * sinf(phase));
+    phase += PHASE_INC;
+    if (phase >= TWO_PI)
+      phase -= TWO_PI;
+
+    // stereo: L and R
+    dst[2*i]     = s;
+    dst[2*i + 1] = s;
+  }
+}
 
 /* USER CODE END 4 */
 

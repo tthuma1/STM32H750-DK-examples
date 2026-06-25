@@ -201,7 +201,7 @@ void AUDIO_IN_SAI_PDMx_DMAx_IRQHandler(void)
 ```
 
 Nastavi linker:
-- Project -> Properties -> MCU/MPU GCC Compiler -> Include Paths
+- Project -> Properties -> C/C++ Build -> Settings -> MCU/MPU GCC Compiler -> Include Paths
 - dodaj `../Drivers/BSP/STM32H750B-DK`
 
 Data flow:
