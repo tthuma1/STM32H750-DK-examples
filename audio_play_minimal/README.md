@@ -1,4 +1,4 @@
-# STM32H750B-DK minimal audio play example
+# STM32H750B-DK Minimal Audio Play Example
 
 The following tutorial presents how to play audio through the built-in Line Out port (green TRS 3.5mm, marked as CN9) on STM32H750B-DK.
 The project is created with STM32CubeMX v6.17.0 with STM32CubeH7 MCU Firmware Package v1.13.0; STM32CubeIDE v2.1.1 was used for building and flashing.
@@ -153,7 +153,6 @@ Add the following code to `Core/Src/main.c`:
 /* USER CODE BEGIN PTD */
 typedef struct {
   uint8_t buff[AUDIO_BUFFER_SIZE];
-  BUFFER_StateTypeDef state;
 }AUDIO_BufferTypeDef;
 /* USER CODE END PTD */
 

@@ -1,3 +1,5 @@
+# STM32H750B-DK Audio Examples
+
 This repository contains examples for the STM32H750B-DK board (STM32H750XBH6 MCU).
 There is a README in each folder that explains each example in further detail.
 Boilerplate code was generated with STM32CubeMX v6.17.0 with STM32CubeH7 MCU Firmware Package v1.13.0; STM32CubeIDE v2.1.1 was used for building and flashing.

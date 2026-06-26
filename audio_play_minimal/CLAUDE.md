@@ -25,8 +25,9 @@ green LINE-OUT / headphone jack
 
 The buffer is a circular ping-pong double buffer: DMA half/complete interrupts trigger
 regeneration of the just-played half (cleaned from D-Cache) while the other half plays; the
-DMA never stops. SAI clock (PLL2) and SAI register setup live in the BSP driver
-(`stm32h750b_discovery_audio.c`), not in `main.c`; `SystemClock_Config()` runs SYSCLK from HSI.
+DMA never stops. SAI clock (PLL2, sourced from the external HSE crystal) and SAI register setup
+live in the BSP driver (`stm32h750b_discovery_audio.c`, in `MX_SAI2_ClockConfig()`), not in
+`main.c`; `SystemClock_Config()` runs SYSCLK from HSI.
 
 ## File structure
 
