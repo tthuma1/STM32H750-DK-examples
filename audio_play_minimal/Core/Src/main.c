@@ -22,7 +22,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "stm32h750b_discovery_audio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -116,7 +115,7 @@ int main(void)
   AudioOutInit.ChannelsNbr = 2;
   AudioOutInit.SampleRate = SAMPLE_RATE;
   AudioOutInit.BitsPerSample = AUDIO_RESOLUTION_16B;
-  AudioOutInit.Volume = 40;
+  AudioOutInit.Volume = 50;
 
   /* Instance 0: WM8994 codec via SAI2 + DMA2, line out / headphone */
   if (BSP_AUDIO_OUT_Init(0, &AudioOutInit) != BSP_ERROR_NONE)
@@ -163,14 +162,23 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  /* SYSCLK stays on HSI; PLL1 is left unused. We only need HSE running and the
+     shared PLL source selector (PLLCKSELR.PLLSRC) pointed at HSE, so that PLL2
+     — configured later in MX_SAI2_ClockConfig() to feed SAI2 — sees a
+     25 MHz / PLL2M(25) = 1 MHz VCO input. PLLSRC is written by hand below. */
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
+
+  /* Select HSE as the shared PLL source for PLL2 (SAI clock). Safe here: all
+     PLLs are still off, and HSE is now running after HAL_RCC_OscConfig(). */
+  __HAL_RCC_PLL_PLLSOURCE_CONFIG(RCC_PLLSOURCE_HSE);
 
   /** Initializes the CPU, AHB and APB buses clocks
   */

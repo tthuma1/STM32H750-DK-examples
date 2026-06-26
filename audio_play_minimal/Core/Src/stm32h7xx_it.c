@@ -199,5 +199,12 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /* USER CODE BEGIN 1 */
-
+/**
+  * @brief  This function handles DMA2 Stream 1 interrupt request
+  *         (SAI2 Block A: audio out to the WM8994 codec).
+  */
+void AUDIO_OUT_SAIx_DMAx_IRQHandler(void)
+{
+  BSP_AUDIO_OUT_IRQHandler(0);
+}
 /* USER CODE END 1 */

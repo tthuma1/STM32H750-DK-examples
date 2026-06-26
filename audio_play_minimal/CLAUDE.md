@@ -9,7 +9,7 @@ jack over **SAI2** + the on-board **WM8994** codec. Playback only — no microph
 Defined in `Core/Inc/main.h`:
 
 - `SAMPLE_RATE` = 96000 Hz, stereo, 16-bit (`AUDIO_RESOLUTION_16B`)
-- `TONE_FREQ` = 100 Hz, `AMPLITUDE` = 30000
+- `TONE_FREQ`,`AMPLITUDE`
 - `AUDIO_BUFFER_SIZE` = 2048 **bytes** → 1024 int16 samples → 512 stereo frames
 
 ## Data path

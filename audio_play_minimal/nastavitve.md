@@ -1,5 +1,8 @@
 Vse SAI nastavitve in PLL2 se nastavi v stm32_audio.c: ti rabiš samo narediit ist main.c, kot je bil prej
 - MPU je vseeno ali enablas (jaz sem ga)
+- Enable HSE crystal (pod System Core -> RCC) - HSE nam da bolj stabilno uro kot HSI, kar je koristno za natančno vzorčenje in predvajanje zvoka
+- Pod Clock Configuration:
+	- PLL Source Mux -> izberes HSE
 - CRC: (CRC in PDM2PCM ne bomo nič rabili v tem projektu, ampak jih rabimo, ker jih BSP audio driver include-a)
 	- Activated
 - PDM2PCM: enabled
@@ -31,7 +34,7 @@ V stm32h7xx_hal_conf.h odkomentiraj:
 #define HAL_SAI_MODULE_ENABLED
 ```
 
-Dodaj v main.c v USER CODE BEGIN Includes:
+Dodaj v main.h:
 ```
 #include "stm32h750b_discovery_audio.h"
 ```
@@ -165,6 +168,22 @@ void GenerateTone(int16_t *dst, uint32_t samples)
     dst[2*i]     = s;
     dst[2*i + 1] = s;
   }
+}
+```
+
+Dodaj v stm32h7xx_it.h:
+```
+```
+
+Dodaj v stm32h7xx_it.c:
+```
+/**
+  * @brief  This function handles DMA2 Stream 1 interrupt request
+  *         (SAI2 Block A: audio out to the WM8994 codec).
+  */
+void AUDIO_OUT_SAIx_DMAx_IRQHandler(void)
+{
+  BSP_AUDIO_OUT_IRQHandler(0);
 }
 ```
 
