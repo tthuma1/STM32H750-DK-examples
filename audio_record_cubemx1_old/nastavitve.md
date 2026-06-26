@@ -1,8 +1,5 @@
 Vse SAI nastavitve in PLL2 se nastavi v stm32_audio.c: ti rabiš samo narediit ist main.c, kot je bil prej
 - MPU je vseeno ali enablas (jaz sem ga)
-- Enable HSE crystal (pod System Core -> RCC) - HSE nam da bolj stabilno uro kot HSI, kar je koristno za natančno vzorčenje in predvajanje zvoka
-- Pod Clock Configuration:
-	- PLL Source Mux -> izberes HSE
 - CRC:
 	- Activated
 - PDM2PCM: enabled
@@ -212,6 +209,6 @@ MEMS mics ──PDM──▶ SAI4_A (PDM mode) ──BDMA Ch1──▶ recordPDM
                                               RecPlayback ring buffer (AXI SRAM, D1)
                                                           │
                                        DMA2_Stream1 ◀─────┘ (circular, mem→periph)
-                                                          ▼
+                                             ▼             
                                            SAI2_A ──I2S──▶ WM8994 ──▶ green line-out jack
                           (WM8994 registers are set over I2C4)

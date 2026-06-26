@@ -124,13 +124,17 @@ Then create the BSP config header by copying the template and renaming it (in
 
 # 4. Add code
 
+Add the following code to `STM32H750XBHX_FLASH.ld` inside the `SECTIONS` block:
+```
+  .D3_SRAM  (NOLOAD) : { *(.D3_SRAM*)  } >RAM_D3
+```
+
 Uncomment the following line in `Core/Inc/stm32h7xx_hal_conf.h`:
 ```c
 #define HAL_SAI_MODULE_ENABLED
 ```
 
 Add the following code to `Core/Src/main.h`:
-
 ```c
 /* USER CODE BEGIN Includes */
 #include "stm32h750b_discovery_audio.h"
@@ -139,37 +143,30 @@ Add the following code to `Core/Src/main.h`:
 // ...
 
 /* USER CODE BEGIN Private defines */
-#define AUDIO_BUFFER_SIZE 2048U
-#define SAMPLE_RATE 96000.0f
-#define TONE_FREQ   200.0f
-#define AMPLITUDE   3000
-#define TWO_PI      6.28318530718f
-#define PHASE_INC   (TWO_PI * TONE_FREQ / SAMPLE_RATE)
+#define AUDIO_FREQUENCY           16000U
+/* Number of uint16 elements in the PDM record buffer (two DMA halves) */
+#define AUDIO_IN_PDM_BUFFER_SIZE  (uint32_t)(128U*AUDIO_FREQUENCY/16000U*2U)
+/* Number of uint16 elements in the PCM playback ring buffer */
+#define AUDIO_BUFF_SIZE           4096U
 /* USER CODE END Private defines */
 ```
 
 Add the following code to `Core/Src/main.c`:
 ```c
-/* USER CODE BEGIN PTD */
-typedef struct {
-  uint8_t buff[AUDIO_BUFFER_SIZE];
-}AUDIO_BufferTypeDef;
-/* USER CODE END PTD */
-
-// ...
-
 /* USER CODE BEGIN PV */
-ALIGN_32BYTES (static AUDIO_BufferTypeDef  buffer_ctl);
+/* PDM record buffer: SAI4 PDM uses BDMA, which can only access D3 SRAM
+   (0x38000000). The .D3_SRAM section is mapped to RAM_D3 in the linker
+   script. NOLOAD section: not zero-initialised at startup. */
+ALIGN_32BYTES(static uint16_t recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE]) __attribute__((section(".D3_SRAM")));
+
+/* PCM playback ring buffer, lives in AXI SRAM (DMA2-accessible) */
+ALIGN_32BYTES(static uint16_t RecPlayback[AUDIO_BUFF_SIZE]);
+
+static uint32_t playbackPtr = 0;
+
 BSP_AUDIO_Init_t AudioOutInit;
-
-static float phase = 0.0f;
+BSP_AUDIO_Init_t AudioInInit;
 /* USER CODE END PV */
-
-// ...
-
-/* USER CODE BEGIN PFP */
-void GenerateTone(int16_t *dst, uint32_t samples);
-/* USER CODE END PFP */
 
 // ...
 
@@ -183,9 +180,21 @@ void GenerateTone(int16_t *dst, uint32_t samples);
   /* USER CODE BEGIN 2 */
   AudioOutInit.Device = AUDIO_OUT_DEVICE_HEADPHONE;
   AudioOutInit.ChannelsNbr = 2;
-  AudioOutInit.SampleRate = SAMPLE_RATE;
+  AudioOutInit.SampleRate = AUDIO_FREQUENCY;
   AudioOutInit.BitsPerSample = AUDIO_RESOLUTION_16B;
-  AudioOutInit.Volume = 50;
+  AudioOutInit.Volume = 80;
+
+  AudioInInit.Device = AUDIO_IN_DEVICE_DIGITAL_MIC;
+  AudioInInit.ChannelsNbr = 2;
+  AudioInInit.SampleRate = AUDIO_FREQUENCY;
+  AudioInInit.BitsPerSample = AUDIO_RESOLUTION_16B;
+  AudioInInit.Volume = 80;
+
+  /* Instance 1: MEMS microphones via SAI4 PDM interface + BDMA */
+  if (BSP_AUDIO_IN_Init(1, &AudioInInit) != BSP_ERROR_NONE)
+  {
+    Error_Handler();
+  }
 
   /* Instance 0: WM8994 codec via SAI2 + DMA2, line out / headphone */
   if (BSP_AUDIO_OUT_Init(0, &AudioOutInit) != BSP_ERROR_NONE)
@@ -193,36 +202,78 @@ void GenerateTone(int16_t *dst, uint32_t samples);
     Error_Handler();
   }
 
-  GenerateTone((int16_t *)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE / 4);
-  SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE);
-  BSP_AUDIO_OUT_Play(0, (uint8_t *)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE);
+  /* Start recording: circular DMA over the whole PDM buffer */
+  if (BSP_AUDIO_IN_RecordPDM(1, (uint8_t *)recordPDMBuf, 2U * AUDIO_IN_PDM_BUFFER_SIZE) != BSP_ERROR_NONE)
+  {
+    Error_Handler();
+  }
+
+  /* Start playback of the PCM ring buffer that record callbacks fill */
+  if (BSP_AUDIO_OUT_Play(0, (uint8_t *)RecPlayback, 2U * AUDIO_BUFF_SIZE) != BSP_ERROR_NONE)
+  {
+    Error_Handler();
+  }
   /* USER CODE END 2 */
 
 // ...
 
 /* USER CODE BEGIN 4 */
 /**
-  * @brief  Manages the full Transfer complete event.
-  * @param  None
+  * @brief  Second half of the PDM record buffer is ready.
+  * @param  Instance Audio in instance (1 = digital MEMS microphones)
   * @retval None
   */
-void BSP_AUDIO_OUT_TransferComplete_CallBack(uint32_t Interface)
+void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
 {
-  /* refill 2nd half of the buffer (the half the DMA just finished playing) */
-  GenerateTone((int16_t *)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], (AUDIO_BUFFER_SIZE / 2) / 4);
-  SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], AUDIO_BUFFER_SIZE / 2);
+  if (Instance == 1U)
+  {
+    /* Invalidate Data Cache to get the updated content of the SRAM */
+    SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE / 2U],
+                                 sizeof(recordPDMBuf) / 2U);
+
+    BSP_AUDIO_IN_PDMToPCM(Instance,
+                          (uint16_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE / 2U],
+                          &RecPlayback[playbackPtr]);
+
+    /* Clean Data Cache to update the content of the SRAM */
+    SCB_CleanDCache_by_Addr((uint32_t *)&RecPlayback[playbackPtr],
+                            AUDIO_IN_PDM_BUFFER_SIZE / 4U);
+
+    playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U;
+    if (playbackPtr >= AUDIO_BUFF_SIZE)
+    {
+      playbackPtr = 0;
+    }
+  }
 }
 
 /**
-  * @brief  Manages the DMA Half Transfer complete event.
-  * @param  None
+  * @brief  First half of the PDM record buffer is ready.
+  * @param  Instance Audio in instance (1 = digital MEMS microphones)
   * @retval None
   */
-void BSP_AUDIO_OUT_HalfTransfer_CallBack(uint32_t Interface)
+void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
 {
-  /* refill 1st half of the buffer (the half the DMA just finished playing) */
-  GenerateTone((int16_t *)&buffer_ctl.buff[0], (AUDIO_BUFFER_SIZE / 2) / 4);
-  SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE / 2);
+  if (Instance == 1U)
+  {
+    /* Invalidate Data Cache to get the updated content of the SRAM */
+    SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[0],
+                                 sizeof(recordPDMBuf) / 2U);
+
+    BSP_AUDIO_IN_PDMToPCM(Instance,
+                          (uint16_t *)&recordPDMBuf[0],
+                          &RecPlayback[playbackPtr]);
+
+    /* Clean Data Cache to update the content of the SRAM */
+    SCB_CleanDCache_by_Addr((uint32_t *)&RecPlayback[playbackPtr],
+                            AUDIO_IN_PDM_BUFFER_SIZE / 4U);
+
+    playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U;
+    if (playbackPtr >= AUDIO_BUFF_SIZE)
+    {
+      playbackPtr = 0;
+    }
+  }
 }
 
 /**
@@ -235,22 +286,8 @@ void BSP_AUDIO_OUT_Error_CallBack(uint32_t Interface)
   Error_Handler();
 }
 
-
-void GenerateTone(int16_t *dst, uint32_t samples)
-{
-  for (uint32_t i = 0; i < samples; i++)
-  {
-    int16_t s = (int16_t)(AMPLITUDE * sinf(phase));
-    phase += PHASE_INC;
-    if (phase >= TWO_PI)
-      phase -= TWO_PI;
-
-    // stereo: L and R
-    dst[2*i]     = s;
-    dst[2*i + 1] = s;
-  }
-}
 /* USER CODE END 4 */
+
 ```
 
 Using HSE as the source clock for SAI2 is recommended since it is more stable than HSI. Use the following `SystemClock_Config` function in `Core/Src/main.c`. Noted are the lines that need to be changed from the default CubeMX generated configuration:
@@ -321,7 +358,17 @@ void AUDIO_OUT_SAIx_DMAx_IRQHandler(void)
 {
   BSP_AUDIO_OUT_IRQHandler(0);
 }
+
+/**
+  * @brief  This function handles BDMA Channel 1 interrupt request
+  *         (SAI4 PDM: digital MEMS microphone record).
+  */
+void AUDIO_IN_SAI_PDMx_DMAx_IRQHandler(void)
+{
+  BSP_AUDIO_IN_IRQHandler(1, AUDIO_IN_DEVICE_DIGITAL_MIC);
+}
 /* USER CODE END 1 */
+
 ```
 
 # 5. Update include path in STM32CubeIDE
@@ -332,4 +379,4 @@ Open the project in STM32CubeIDE and navigate to `Project` → `Properties` → 
 
 # Notes
 
-Adjust your speaker/headphones volume before running this example. Volume can also be changed through `AudioOutInit.Volume` in `main.c` or by changing the `AMPLITUDE` in `main.h`.
+Adjust your speaker/headphones volume before running this example. Volume can also be changed through `AudioOutInit.Volume` in `main.c`.
