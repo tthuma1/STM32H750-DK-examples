@@ -42,7 +42,7 @@ uses **SAI2 Block A** as the transmitter. The SAI generates four wires:
 All four pins are configured for their respective functions with alternate-function **AF10**.
 
 **I2S**: the framing protocol used between SAI2 and WM8994 (Philips I²S
-standard: MSB-first, data delayed one bit after FS, FS low = left channel).
+standard: MSB-first, data delayed one bit after FS, FS low = left channel; 32-bit slot (L+R), 16-bit data).
 
 **WM8994**: Cirrus stereo codec that receives the I2S stream,
 performs the D/A conversion and amplifies the result to the Line-Out / headphone jack. Its control registers (input routing, DAC path,
@@ -151,12 +151,6 @@ Uncomment the following line in `Core/Inc/stm32h7xx_hal_conf.h`:
 Add the following code to `Core/Src/main.c`:
 ```c
 /* USER CODE BEGIN PTD */
-typedef enum {
-  BUFFER_OFFSET_NONE = 0,
-  BUFFER_OFFSET_HALF,
-  BUFFER_OFFSET_FULL,
-}BUFFER_StateTypeDef;
-
 typedef struct {
   uint8_t buff[AUDIO_BUFFER_SIZE];
   BUFFER_StateTypeDef state;
@@ -175,7 +169,6 @@ static float phase = 0.0f;
 // ...
 
 /* USER CODE BEGIN PFP */
-void AUDIO_Process(void);
 void GenerateTone(int16_t *dst, uint32_t samples);
 /* USER CODE END PFP */
 
@@ -208,36 +201,7 @@ void GenerateTone(int16_t *dst, uint32_t samples);
 
 // ...
 
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    AUDIO_Process();
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
-
-// ...
-
 /* USER CODE BEGIN 4 */
-void AUDIO_Process(void)
-{
-  if (buffer_ctl.state == BUFFER_OFFSET_HALF)
-  {
-    GenerateTone((int16_t *)&buffer_ctl.buff[0], (AUDIO_BUFFER_SIZE / 2) / 4);
-    buffer_ctl.state = BUFFER_OFFSET_NONE;
-    SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE / 2);
-  }
-
-  if (buffer_ctl.state == BUFFER_OFFSET_FULL)
-  {
-    GenerateTone((int16_t *)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], (AUDIO_BUFFER_SIZE / 2) / 4);
-    buffer_ctl.state = BUFFER_OFFSET_NONE;
-    SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], AUDIO_BUFFER_SIZE / 2);
-  }
-}
-
 /**
   * @brief  Manages the full Transfer complete event.
   * @param  None
@@ -245,8 +209,9 @@ void AUDIO_Process(void)
   */
 void BSP_AUDIO_OUT_TransferComplete_CallBack(uint32_t Interface)
 {
-  /* allows AUDIO_Process() to refill 2nd part of the buffer  */
-  buffer_ctl.state = BUFFER_OFFSET_FULL;
+  /* refill 2nd half of the buffer (the half the DMA just finished playing) */
+  GenerateTone((int16_t *)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], (AUDIO_BUFFER_SIZE / 2) / 4);
+  SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[AUDIO_BUFFER_SIZE / 2], AUDIO_BUFFER_SIZE / 2);
 }
 
 /**
@@ -256,8 +221,9 @@ void BSP_AUDIO_OUT_TransferComplete_CallBack(uint32_t Interface)
   */
 void BSP_AUDIO_OUT_HalfTransfer_CallBack(uint32_t Interface)
 {
-  /* allows AUDIO_Process() to refill 1st part of the buffer  */
-  buffer_ctl.state = BUFFER_OFFSET_HALF;
+  /* refill 1st half of the buffer (the half the DMA just finished playing) */
+  GenerateTone((int16_t *)&buffer_ctl.buff[0], (AUDIO_BUFFER_SIZE / 2) / 4);
+  SCB_CleanDCache_by_Addr((uint32_t*)&buffer_ctl.buff[0], AUDIO_BUFFER_SIZE / 2);
 }
 
 /**
@@ -288,7 +254,7 @@ void GenerateTone(int16_t *dst, uint32_t samples)
 /* USER CODE END 4 */
 ```
 
-Using HSE as the source clock for SAI2 is recommended since it is more stable than HSI. Use the following `SystemClock_Config` function in `Core/Src/main.c`:
+Using HSE as the source clock for SAI2 is recommended since it is more stable than HSI. Use the following `SystemClock_Config` function in `Core/Src/main.c`. Noted are the lines that need to be changed from the default CubeMX generated configuration:
 
 ```c
 /**
@@ -313,17 +279,17 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_HSE; // NOTE: changed from the default CubeMX project
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON; // NOTE: changed from the default CubeMX project
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
 
-  __HAL_RCC_PLL_PLLSOURCE_CONFIG(RCC_PLLSOURCE_HSE);
+  __HAL_RCC_PLL_PLLSOURCE_CONFIG(RCC_PLLSOURCE_HSE);  // NOTE: changed from the default CubeMX project
 
   /** Initializes the CPU, AHB and APB buses clocks
   */
