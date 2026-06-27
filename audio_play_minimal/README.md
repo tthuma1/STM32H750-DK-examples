@@ -1,6 +1,6 @@
 # STM32H750B-DK Minimal Audio Play Example
 
-The following tutorial presents how to play audio through the built-in Line Out port (green TRS 3.5mm, marked as CN9) on STM32H750B-DK.
+The following tutorial presents how to play audio through the built-in Line Out port (green TRS 3.5mm, PJ-3028, marked as CN9) on STM32H750B-DK.
 The project is created with STM32CubeMX v6.17.0 with STM32CubeH7 MCU Firmware Package v1.13.0; STM32CubeIDE v2.1.1 was used for building and flashing.
 
 Enabling D- and I-cache is not necessary in this project, but is kept as a good practice for audio processing on embedded systems. The same is true for using the HSE clock as the source clock for SAI instead of HSI.
@@ -79,8 +79,8 @@ maintenance operations.
 
 It may be useful to take a look at the schematic, taken from https://www.st.com/resource/en/schematic_pack/mb1381-h750xb-b04.pdf.
 
-![Audio schematics overview](./assets/schem_min.png)
-![Full audio schematics](./assets/schem_full.png)
+![Audio schematics overview](../assets/schem_min.png)
+![Full audio schematics](../assets/schem_full.png)
 
 # 1. Create the project
 

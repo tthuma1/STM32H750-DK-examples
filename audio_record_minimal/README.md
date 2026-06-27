@@ -1,6 +1,6 @@
-# STM32H750B-DK Minimal Audio Play Example
+# STM32H750B-DK Minimal Audio Record Example
 
-The following tutorial presents how to play audio through the built-in Line Out port (green TRS 3.5mm, marked as CN9) on STM32H750B-DK.
+The following tutorial presents how to record audio through the built-in PDM MEMS microphone (IMP34DT05TR, marked as U34) and play it back through the Line Out port (green TRS 3.5mm, PJ-3028, marked as CN9) on STM32H750B-DK.
 The project is created with STM32CubeMX v6.17.0 with STM32CubeH7 MCU Firmware Package v1.13.0; STM32CubeIDE v2.1.1 was used for building and flashing.
 
 Enabling D- and I-cache is not necessary in this project, but is kept as a good practice for audio processing on embedded systems. The same is true for using the HSE clock as the source clock for SAI instead of HSI.
@@ -15,16 +15,16 @@ jack.
 ### Data flow:
 
 ```
-SRAM buffer (filled with GenerateTone())
-   ▼  DMA2_Stream1  (circular, mem→periph, request SAI2_A)
-SAI2 Block A TX
-   │
-   I2S transmission protocol
-   │
-   ▼
-WM8994 codec  (control registers are set over I2C4)
-   ▼
-green Line Out jack
+MEMS mics ──PDM──▶ SAI4_A (PDM mode) ──BDMA Ch1──▶ recordPDMBuf (D3 SRAM @0x38000000)
+                                                          │
+                                       BDMA half/cplt IRQ │  CPU: BSP_AUDIO_IN_PDMToPCM()
+                                                          ▼
+                                              RecPlayback ring buffer (AXI SRAM, D1)
+                                                          │
+                                       DMA2_Stream1 ◀─────┘ (circular, mem→periph)
+                                             ▼             
+                                           SAI2_A ──I2S──▶ WM8994 ──▶ green line-out jack
+                          (WM8994 registers are set over I2C4)
 ```
 
 ### Peripherals used
@@ -79,8 +79,8 @@ maintenance operations.
 
 It may be useful to take a look at the schematic, taken from https://www.st.com/resource/en/schematic_pack/mb1381-h750xb-b04.pdf.
 
-![Audio schematics overview](./assets/schem_min.png)
-![Full audio schematics](./assets/schem_full.png)
+![Audio schematics overview](../assets/schem_min.png)
+![Full audio schematics](../assets/schem_full.png)
 
 # 1. Create the project
 
@@ -382,4 +382,4 @@ Build and flash the project from STM32CubeIDE.
 
 # Notes
 
-Adjust your speaker/headphones volume before running this example. Volume can also be changed through `AudioOutInit.Volume` in `main.c`.
+Adjust your speaker/headphones volume before running this example. Volume can also be changed through `AudioOutInit.Volume` and `AudioInInit.Volume` in `main.c`.
