@@ -329,6 +329,10 @@ void AUDIO_OUT_SAIx_DMAx_IRQHandler(void)
 Open the project in STM32CubeIDE and navigate to `Project` → `Properties` → `C/C++ Build` → `Settings` → `MCU/MPU GCC Compiler` → `Include Paths`:
   - Add `../Drivers/BSP/STM32H750B-DK` under `Include paths (-I)`
 
+# 6. Build and flash the project
+
+Build and flash the project from STM32CubeIDE.
+
 
 # Notes
 

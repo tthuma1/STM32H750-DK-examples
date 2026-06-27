@@ -124,7 +124,7 @@ Then create the BSP config header by copying the template and renaming it (in
 
 # 4. Add code
 
-Add the following code to `STM32H750XBHX_FLASH.ld` inside the `SECTIONS` block:
+Add the following code to `STM32H750XBHX_FLASH.ld` inside the `SECTIONS` block (e.g. after the `.bss` block):
 ```
   .D3_SRAM  (NOLOAD) : { *(.D3_SRAM*)  } >RAM_D3
 ```
@@ -376,6 +376,9 @@ void AUDIO_IN_SAI_PDMx_DMAx_IRQHandler(void)
 Open the project in STM32CubeIDE and navigate to `Project` → `Properties` → `C/C++ Build` → `Settings` → `MCU/MPU GCC Compiler` → `Include Paths`:
   - Add `../Drivers/BSP/STM32H750B-DK` under `Include paths (-I)`
 
+# 6. Build and flash the project
+
+Build and flash the project from STM32CubeIDE.
 
 # Notes
 
