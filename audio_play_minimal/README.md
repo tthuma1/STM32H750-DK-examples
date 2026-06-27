@@ -77,7 +77,7 @@ maintenance operations.
 
 ### Schematics
 
-It may be useful to take a look at the schematic, taken from https://www.st.com/resource/en/schematic_pack/mb1381-h750xb-b04.pdf.
+It may be useful to take a look at the schematic, taken from https://www.st.com/resource/en/schematic_pack/mb1381-h750xb-b04.pdf (pages 3 and 13).
 
 ![Audio schematics overview](../assets/schem_min.png)
 ![Full audio schematics](../assets/schem_full.png)

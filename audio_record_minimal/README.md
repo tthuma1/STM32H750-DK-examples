@@ -1,6 +1,6 @@
 # STM32H750B-DK Minimal Audio Record Example
 
-The following tutorial presents how to record audio through the built-in PDM MEMS microphone (IMP34DT05TR, marked as U34) and play it back through the Line Out port (green TRS 3.5mm, PJ-3028, marked as CN9) on STM32H750B-DK.
+The following tutorial presents how to record audio through the built-in PDM MEMS microphone (IMP34DT05TR, marked as U34) and play it back through the Line Out port (green TRS 3.5mm, PJ-3028, marked as CN9) on the STM32H750B-DK.
 The project is created with STM32CubeMX v6.17.0 with STM32CubeH7 MCU Firmware Package v1.13.0; STM32CubeIDE v2.1.1 was used for building and flashing.
 
 Enabling D- and I-cache is not necessary in this project, but is kept as a good practice for audio processing on embedded systems. The same is true for using the HSE clock as the source clock for SAI instead of HSI.
@@ -24,8 +24,8 @@ MEMS mics ──PDM──▶ SAI4_A (PDM mode) ──BDMA Ch1──▶ recordPDM
                                                           │
                                        DMA2_Stream1 ◀─────┘ (circular, mem→periph)
                                              ▼             
-                                           SAI2_A ──I2S──▶ WM8994 ──▶ green line-out jack
-                          (WM8994 registers are set over I2C4)
+                                           SAI2_A ──I2S──▶ WM8994 ──▶ line-out jack
+                                               (WM8994 registers are set over I2C4)
 ```
 
 ### Peripherals used
@@ -61,7 +61,7 @@ performs the D/A conversion and amplifies the result to the Line-Out / headphone
 volume, power) are configured by the BSP driver over **I2C4**.
 
 **DMA (Direct Memory Access)**: moves audio buffers between SRAM and the SAI data registers with
-no CPU involvement.  Two separate DMA controllers are used, one per direction:
+no CPU involvement. Two separate DMA controllers are used, one per direction:
 
 - **BDMA Channel 1** (record): moves the PDM bitstream from `SAI4_A` into `recordPDMBuf`,
   **circular**, 16-bit. BDMA lives in the D3 domain and is the only DMA that can
@@ -78,28 +78,39 @@ drive the buffer handling.
 
 ### Gapless audio transmission with double-buffering
 
-The audio buffer is treated as two halves. The DMA raises an interrupt at the buffer
-midpoint (**half-transfer**) and at the end (**transfer-complete**). On half-transfer the DMA is
-now playing the second half, so the CPU regenerates the first half; on transfer-complete it
-is playing the first half, so the CPU refills the second.
+Both DMAs in the loopback path use double-buffering, so neither ever has to stop and audio
+flows without gaps:
 
-Because the D-Cache is enabled, after the CPU writes samples it must
-`SCB_CleanDCache_by_Addr()` that region so the DMA reads the fresh data from SRAM and not stale
-cache. The buffer is `ALIGN_32BYTES` to match the 32-byte cache-line granularity of those
-maintenance operations.
+- **Record (BDMA → `recordPDMBuf`):** the BDMA fills the PDM buffer continuously and raises an
+  interrupt at the buffer midpoint (**half-transfer**) and at the end (**transfer-complete**).
+  On half-transfer the BDMA is now filling the second half, so the CPU processes the first half;
+  on transfer-complete it is filling the first half, so the CPU processes the second. Each
+  callback runs the PDM→PCM conversion on the just-filled half and writes the result into the
+  `RecPlayback` ring.
+- **Playback (DMA2 → SAI2):** DMA2 streams `RecPlayback` circularly out to the codec. The
+  PDM→PCM conversion in the record callbacks keeps writing fresh PCM ahead of the playback read
+  pointer, so the half DMA2 is about to play is always refilled before it gets there.
+
+Because the D-Cache is enabled, the callbacks do cache maintenance at both ends of the
+conversion. Before reading the freshly captured PDM half they `SCB_InvalidateDCache_by_Addr()`
+it, so the CPU sees the data the BDMA just wrote to SRAM rather than stale cache; after writing
+the converted PCM samples they `SCB_CleanDCache_by_Addr()` that region, so DMA2 reads the fresh
+data from SRAM and not stale cache. The buffers are `ALIGN_32BYTES` to match the 32-byte
+cache-line granularity of those maintenance operations.
 
 ### Clocking
 
 - **CPU / bus clocks** come from **HSI** (the 64 MHz internal RC oscillator).
 - **The audio sample clock** must be exact, so it is derived from **HSE** (the board's external
-  25 MHz crystal) through PLL2, set up inside the BSP driver's `MX_SAI2_ClockConfig()`. PLL2 is used as a source clock for SAI2. For the
-  48 kHz family (which includes 96 kHz, currently used in this project) PLL2 produces ≈49.14 MHz
-  (HSE 25 MHz ÷ PLL2M 25 = 1 MHz VCO input, ×PLL2N 344 = 344 MHz, ÷PLL2P 7), which the SAI then
-  divides down to the exact MCLK and SCK for the requested Fs.
+  25 MHz crystal) through PLL2. Both serial-audio peripherals are fed from PLL2: the playback
+  side (SAI2) is set up in the BSP driver's `MX_SAI2_ClockConfig()`, and the mic-capture side
+  (SAI4) in `MX_SAI4_ClockConfig()`. For the 16 kHz used here PLL2 produces ≈49.14 MHz
+  (HSE 25 MHz ÷ PLL2M 25 = 1 MHz VCO input, ×PLL2N 344 = 344 MHz, ÷PLL2P 7), which each SAI then
+  divides down to the exact MCLK/SCK for the requested Fs.
 
 ### Schematics
 
-It may be useful to take a look at the schematic, taken from https://www.st.com/resource/en/schematic_pack/mb1381-h750xb-b04.pdf.
+It may be useful to take a look at the schematic, taken from https://www.st.com/resource/en/schematic_pack/mb1381-h750xb-b04.pdf (pages 3 and 13).
 
 ![Audio schematics overview](../assets/schem_min.png)
 ![Full audio schematics](../assets/schem_full.png)
