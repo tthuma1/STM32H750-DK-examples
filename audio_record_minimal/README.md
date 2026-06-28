@@ -144,9 +144,9 @@ that path under the MCU FP root into the same path under your project root.
 
 | Files to copy | Relative path (same in MCU FP and your project) |
 |---------------|----------------------------------------|
-| `stm32h7xx_hal_sai.h`, `stm32h7xx_hal_sai_ex.h` | `Drivers/STM32H7xx_HAL_Driver/Inc` |
-| `stm32h7xx_hal_sai.c`, `stm32h7xx_hal_sai_ex.c` | `Drivers/STM32H7xx_HAL_Driver/Src` |
-| `stm32h750b_discovery_audio.{c,h}`, `stm32h750b_discovery_bus.{c,h}`, `stm32h750b_discovery_errno.h` | `Drivers/BSP/STM32H750B-DK` |
+| `stm32h7xx_hal_sai.h`<br> `stm32h7xx_hal_sai_ex.h` | `Drivers/STM32H7xx_HAL_Driver/Inc` |
+| `stm32h7xx_hal_sai.c`<br> `stm32h7xx_hal_sai_ex.c` | `Drivers/STM32H7xx_HAL_Driver/Src` |
+| `stm32h750b_discovery_audio.{c,h}`<br> `stm32h750b_discovery_bus.{c,h}`<br> `stm32h750b_discovery_errno.h` | `Drivers/BSP/STM32H750B-DK` |
 | entire `wm8994` folder | `Drivers/BSP/Components/wm8994` |
 | `audio.h` | `Drivers/BSP/Components/Common` |
 
@@ -404,7 +404,7 @@ void AUDIO_IN_SAI_PDMx_DMAx_IRQHandler(void)
 
 ```
 
-# 5. Update include path in STM32CubeIDE
+# 5. Update include paths in STM32CubeIDE
 
 Open the project in STM32CubeIDE and navigate to `Project` → `Properties` → `C/C++ Build` → `Settings` → `MCU/MPU GCC Compiler` → `Include Paths`:
   - Add `../Drivers/BSP/STM32H750B-DK` under `Include paths (-I)`
