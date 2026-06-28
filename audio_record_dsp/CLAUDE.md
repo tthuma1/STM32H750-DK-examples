@@ -1,0 +1,91 @@
+# CLAUDE.md
+
+## What this is
+
+Bare-metal STM32 audio loopback demo on the **STM32H750B-DK** board
+(STM32H750XBH6 MPU, Cortex-M7). It captures two-channel (stereo) PDM audio
+from the on-board MEMS microphone (IMP34DT05TR, wired as a stereo PDM pair),
+runs a configurable software DSP stage (high-pass / low-pass / reverb) on the
+PCM, and plays it back in real time through the green line-out jack via the
+WM8994 codec. CubeMX-generated HAL project, built with STM32CubeIDE.
+
+## Data path
+
+```
+mics ─PDM→ SAI4_A ─BDMA Ch1→ recordPDMBuf (D3 SRAM @0x38000000)
+   ─[BDMA IRQ: CPU BSP_AUDIO_IN_PDMToPCM → DSP_Process]→ RecPlayback ring (AXI SRAM, D1)
+   ─DMA2_Stream1 (circular)→ SAI2_A ─I2S→ WM8994 ─→ line-out   (WM8994 ctrl via I2C4)
+```
+
+- **Audio in (instance 1):** `AUDIO_IN_DEVICE_DIGITAL_MIC` (= MIC1 | MIC2),
+  `ChannelsNbr = 2`, SAI4_A in PDM mode (`MicPairsNbr = 2`), BDMA into
+  `recordPDMBuf`. BDMA can *only* reach D3 SRAM, so `recordPDMBuf` is forced
+  into the `.D3_SRAM` section (`0x38000000`).
+- **PDM→PCM:** done by CPU in the BDMA half/complete callbacks
+  (`BSP_AUDIO_IN_HalfTransfer_CallBack` / `..._TransferComplete_CallBack`).
+  One PDM filter runs per channel and produces interleaved stereo PCM, written
+  into `RecPlayback` at `playbackPtr`.
+- **DSP:** each callback then calls `DSP_Process` on the freshly written block,
+  modifying the PCM in place (see "DSP stage" below).
+- **Audio out (instance 0):** WM8994 over SAI2_A + DMA2_Stream1, circular over
+  `RecPlayback`, 2 channels. Configured/controlled over I2C4.
+- Config: 16 kHz, 16-bit, stereo (`AUDIO_FREQUENCY`, sizes in `Core/Inc/main.h`).
+
+## DSP stage
+
+`DSP_Process` (in `dsp.c`) edits the PCM in place, applying five combinable
+effects as a fixed chain **HPF → LPF → reverb → conv → RIR**: one-pole RC
+high/low pass, an IIR feedback delay line, an 8-tap moving-average smoothing
+FIR (`dsp_conv_kernel`), and a Room Impulse Response convolution
+(`dsp_rir_kernel`, a long FIR — synthetic exp-decay room response built at
+startup by `DSP_RIR_Build`, tunable via `DSP_RIR_RT60_MS`/`_LEN_MS`/`_WET`).
+Tune via the `DSP_*` `#define`s at the top of `dsp.h`; disabled effects
+(`DSP_ENABLE_*` = 0) compile out.
+
+## Where the logic lives
+
+The application code lives in:
+
+- **`Core/Src/dsp.c` + `Core/Inc/dsp.h`** — the software DSP stage: `DSP_Process`,
+  the synthetic-RIR builder `DSP_RIR_Build`, the CMSIS-DSP setup `DSP_CMSIS_Init`,
+  all per-channel/CMSIS filter state, and the `DSP_*` `#define` configuration
+  (effect enables + tunables, plus the `DSP_USE_CMSIS` custom-vs-CMSIS switch).
+- **`Core/Src/main.c`** — init, buffer declarations, the two record callbacks
+  (the actual loopback logic), `MPU_Config`, clock config, the `ENABLE_*CACHE`
+  toggles. In the CubeMX `USER CODE` blocks.
+- **`Core/Inc/main.h`** — `AUDIO_FREQUENCY`, `AUDIO_IN_PDM_BUFFER_SIZE`,
+  `AUDIO_BUFF_SIZE`.
+
+## File structure
+
+```
+audio_record_cubemx1.ioc      CubeMX project — edit peripherals/pins here, then regenerate
+Core/
+  Inc/   main.h, dsp.h (DSP config + public API), stm32h7xx_hal_conf.h, stm32h7xx_it.h
+  Src/   main.c, dsp.c (software DSP stage), stm32h7xx_hal_msp.c (peripheral MSP init),
+         stm32h7xx_it.c (ISRs), system_stm32h7xx.c, sys{calls,mem}.c
+  Startup/  startup_stm32h750xbhx.s
+PDM2PCM/App/        pdm2pcm.c/.h — PDM2PCM middleware glue (MX_PDM2PCM_Init)
+Drivers/
+  BSP/Components/wm8994/         WM8994 codec driver
+  BSP/STM32H750B-DK/             board BSP: stm32h750b_discovery_audio.{c,h} (BSP_AUDIO_* API),
+                                 _bus.c (I2C4), _conf.h
+  STM32H7xx_HAL_Driver/          ST HAL
+  CMSIS/                         CMSIS core + device headers
+Middlewares/ST/STM32_Audio/Addons/PDM/   PDM filter lib (libPDMFilter_CM7_GCC_wc32.a) + glo header
+STM32H750XBHX_FLASH.ld          linker script — internal flash (defines RAM_D3 + .D3_SRAM)
+STM32H750XBHX_RAM.ld            linker script — RAM-only variant
+Debug/                          STM32CubeIDE build output (makefile + artifacts)
+```
+
+## Build / flash
+
+Default build links against `STM32H750XBHX_FLASH.ld` (runs from internal flash).
+Flash/debug with ST-LINK via the IDE or the `.launch` config.
+
+Don't try to build the project after you are done with implementation.
+
+## Gotchas
+
+- **D3 SRAM is mandatory for the PDM buffer.** BDMA (the only DMA the SAI4
+  domain uses) cannot access D1/D2 RAM. Don't move `recordPDMBuf`.

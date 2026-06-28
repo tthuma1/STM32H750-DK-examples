@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "dsp.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,7 +32,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* DSP configuration and tunables now live in dsp.h. */
 
+/* ---- Cache enables ---- */
+#define ENABLE_ICACHE       1
+#define ENABLE_DCACHE       1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -44,14 +48,14 @@
 
 CRC_HandleTypeDef hcrc;
 
-//* USER CODE BEGIN PV */
+/* USER CODE BEGIN PV */
 /* PDM record buffer: SAI4 PDM uses BDMA, which can only access D3 SRAM
    (0x38000000). The .D3_SRAM section is mapped to RAM_D3 in the linker
    script. NOLOAD section: not zero-initialised at startup. */
-ALIGN_32BYTES(static uint16_t recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE]) __attribute__((section(".D3_SRAM")));
+static uint16_t recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE] __attribute__((section(".D3_SRAM")));
 
 /* PCM playback ring buffer, lives in AXI SRAM (DMA2-accessible) */
-ALIGN_32BYTES(static uint16_t RecPlayback[AUDIO_BUFF_SIZE]);
+static uint16_t RecPlayback[AUDIO_BUFF_SIZE];
 
 static uint32_t playbackPtr = 0;
 
@@ -62,9 +66,9 @@ BSP_AUDIO_Init_t AudioInInit;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MPU_Config(void);
+static void MX_GPIO_Init(void);
 static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
-
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -80,8 +84,12 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+#if ENABLE_ICACHE
   SCB_EnableICache();
+#endif
+#if ENABLE_DCACHE
   SCB_EnableDCache();
+#endif
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -104,6 +112,7 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
+  MX_GPIO_Init();
   MX_CRC_Init();
   MX_PDM2PCM_Init();
   /* USER CODE BEGIN 2 */
@@ -131,6 +140,19 @@ int main(void)
     Error_Handler();
   }
 
+  /* Initialise the CMSIS-DSP filter instances BEFORE starting the audio
+     streams. The record DMA below enables the PDM callbacks, whose first
+     interrupt can fire (and call DSP_Process -> arm_*) while the codec is
+     still being configured over I2C - i.e. before the filters exist. Doing
+     this here guarantees numStages/pCoeffs/pState are valid first. */
+#if DSP_ENABLE_RIR
+  DSP_RIR_Build();          /* generate the synthetic room response before init/streaming */
+#endif
+
+#if DSP_USE_CMSIS
+  DSP_CMSIS_Init();
+#endif
+
   /* Start recording: circular DMA over the whole PDM buffer */
   if (BSP_AUDIO_IN_RecordPDM(1, (uint8_t *)recordPDMBuf, 2U * AUDIO_IN_PDM_BUFFER_SIZE) != BSP_ERROR_NONE)
   {
@@ -142,6 +164,11 @@ int main(void)
   {
     Error_Handler();
   }
+
+  /* Enable DWT cycle counter for DSP benchmarking */
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL   |= DWT_CTRL_CYCCNTENA_Msk;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -177,17 +204,14 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_HSE; // NOTE: changed from the default CubeMX project
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON; // NOTE: changed from the default CubeMX project
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
-
-  __HAL_RCC_PLL_PLLSOURCE_CONFIG(RCC_PLLSOURCE_HSE);  // NOTE: changed from the default CubeMX project
 
   /** Initializes the CPU, AHB and APB buses clocks
   */
@@ -240,6 +264,25 @@ static void MX_CRC_Init(void)
 
 }
 
+/**
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+
+  /* USER CODE END MX_GPIO_Init_1 */
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOH_CLK_ENABLE();
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+  /* USER CODE END MX_GPIO_Init_2 */
+}
+
 /* USER CODE BEGIN 4 */
 /**
   * @brief  Second half of the PDM record buffer is ready.
@@ -250,17 +293,21 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
 {
   if (Instance == 1U)
   {
-    /* Invalidate Data Cache to get the updated content of the SRAM */
+#if ENABLE_DCACHE
     SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE / 2U],
                                  sizeof(recordPDMBuf) / 2U);
+#endif
 
     BSP_AUDIO_IN_PDMToPCM(Instance,
                           (uint16_t *)&recordPDMBuf[AUDIO_IN_PDM_BUFFER_SIZE / 2U],
                           &RecPlayback[playbackPtr]);
 
-    /* Clean Data Cache to update the content of the SRAM */
+    DSP_Process(&RecPlayback[playbackPtr], (AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U);
+
+#if ENABLE_DCACHE
     SCB_CleanDCache_by_Addr((uint32_t *)&RecPlayback[playbackPtr],
                             AUDIO_IN_PDM_BUFFER_SIZE / 4U);
+#endif
 
     playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U;
     if (playbackPtr >= AUDIO_BUFF_SIZE)
@@ -279,17 +326,21 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
 {
   if (Instance == 1U)
   {
-    /* Invalidate Data Cache to get the updated content of the SRAM */
+#if ENABLE_DCACHE
     SCB_InvalidateDCache_by_Addr((uint32_t *)&recordPDMBuf[0],
                                  sizeof(recordPDMBuf) / 2U);
+#endif
 
     BSP_AUDIO_IN_PDMToPCM(Instance,
                           (uint16_t *)&recordPDMBuf[0],
                           &RecPlayback[playbackPtr]);
 
-    /* Clean Data Cache to update the content of the SRAM */
+    DSP_Process(&RecPlayback[playbackPtr], (AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U) / 2U);
+
+#if ENABLE_DCACHE
     SCB_CleanDCache_by_Addr((uint32_t *)&RecPlayback[playbackPtr],
                             AUDIO_IN_PDM_BUFFER_SIZE / 4U);
+#endif
 
     playbackPtr += AUDIO_IN_PDM_BUFFER_SIZE / 4U / 2U;
     if (playbackPtr >= AUDIO_BUFF_SIZE)
