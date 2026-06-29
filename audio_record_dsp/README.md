@@ -73,9 +73,10 @@ no meaningful data is being captured.
 It works in three steps, computed once per frame:
 
 1. **Level detection.** Take the larger of the two channels' magnitudes:
-   `in = max(|L|, |R|)`. Using the stereo-max (rather than per-channel) makes
-   the gate **channel-linked** — one gain is applied to both channels, so the
-   stereo image can't wander as the gate opens and closes.
+   `in = max(|L|, |R|)`. Driving the gate from the louder of the two channels
+   instead of gating each one on its own keeps it **channel-linked**: both
+   channels always get the same gain, so the stereo image stays put as the gate
+   opens and closes.
 
 2. **Envelope follower** (a one-pole smoother with asymmetric time constants):
 
@@ -102,16 +103,16 @@ $$
    Below `DSP_GATE_THRESH` (≈ noise floor) the gate is fully closed (`g = 0`);
    once the envelope is `DSP_GATE_KNEE` above threshold it is fully open
    (`g = 1`); in between it ramps smoothly. The two thresholds are expressed in
-   raw int16 LSB and **must be tuned to your microphone** — watch `gate_env` in
+   raw int16 LSB and **must be tuned to your microphone**. Watch `gate_env` in
    the debugger during silence and set `THRESH` a little above the idle level.
 
-### HPF — high-pass filter
+### High-pass filter
 
-A high-pass filter removes low-frequency content (DC offset, handling rumble,
-HVAC hum) below its cutoff `DSP_HPF_CUTOFF_HZ` and lets higher frequencies pass.
+A high-pass filter removes low-frequency content (e.g. DC offset, 
+bass) below its cutoff `DSP_HPF_CUTOFF_HZ` and lets higher frequencies pass.
 
-**Custom path — 1st-order one-pole IIR (Butterworth).** Designed with the bilinear (Tustin)
-transform of an analog RC high-pass. The cutoff is *prewarped* so the digital
+**Custom path (1st-order one-pole IIR (Butterworth)):** Designed with the bilinear (Tustin)
+transform of an analog RC high-pass. The cutoff is prewarped so the digital
 cutoff lands exactly on the analog one:
 
 $$
@@ -123,10 +124,9 @@ y[n] &= b_0 \cdot \big(x[n] - x[n-1]\big) - a_1 \cdot y[n-1]
 \end{aligned}
 $$
 
-A first-order filter rolls off gently at **6 dB/octave**. It's one multiply-add
-per sample per channel — extremely cheap, which is the point of the custom path.
+A first-order filter rolls off at **6 dB/octave**.
 
-**CMSIS path — 4th-order Butterworth.** Built as a cascade of **two** 2nd-order
+**CMSIS path (4th-order Butterworth):** Built as a cascade of two 2nd-order
 sections (biquads) run by `arm_biquad_cascade_df1_f32`. Both sections share the
 cutoff but use different pole-pair damping factors so that the overall response
 is *maximally flat* in the passband (Butterworth):
@@ -135,7 +135,7 @@ $$
 d_0 = 2\sin(\pi/8) \approx 0.7654, \qquad d_1 = 2\sin(3\pi/8) \approx 1.8478
 $$
 
-Each section's coefficients (per `DSP_CMSIS_Init`):
+Each section's coefficients:
 
 $$
 \begin{aligned}
@@ -145,25 +145,35 @@ a_1 &= \frac{2(1-K^2)}{\mathrm{norm}}, \qquad a_2 = \frac{-(1 - d K + K^2)}{\mat
 \end{aligned}
 $$
 
-> **Note — CMSIS DF1 vs. standard biquad form.** The `a_1`/`a_2` above are the
-> values `DSP_CMSIS_Init` actually stores, which differ in sign from the textbook
+The 4th-order output is the two biquads run back-to-back: the input feeds
+section 1 (damping $d_0$), and its output feeds section 2 (damping $d_1$). With
+the stored DF1 coefficients (feedback terms *added*), each section $s$ computes
+
+$$
+y_s[n] = b_0\,x_s[n] + b_1\,x_s[n-1] + b_2\,x_s[n-2] + a_1\,y_s[n-1] + a_2\,y_s[n-2]
+$$
+
+$$
+x_1[n] = x[n], \qquad x_2[n] = y_1[n], \qquad y[n] = y_2[n]
+$$
+
+> **Note on CMSIS DF1 vs. standard biquad form:** The `a_1`/`a_2` above are the
+> values out code actually stores, which differ in sign from the textbook
 > biquad form. The standard difference equation *subtracts* the feedback terms:
 > `y[n] = b0·x[n] + b1·x[n-1] + b2·x[n-2] − a1·y[n-1] − a2·y[n-2]`, giving
 > `a1 = 2(K²−1)/norm` and `a2 = (1−dK+K²)/norm`. `arm_biquad_cascade_df1_f32`
 > instead *adds* its feedback terms, so it expects those coefficients **already
-> negated** — hence the flipped signs shown here.
+> negated**, hence the flipped signs shown here.
 
 A 4th-order filter rolls off four times as steeply (**24 dB/octave**), giving a
-much sharper transition than the custom one-pole at the cost of more arithmetic
-— which is exactly the kind of trade-off the two-path benchmark is meant to
-illustrate.
+much sharper transition than the one-pole at the cost of more arithmetic.
 
-### LPF — low-pass filter
+### Low-pass filter
 
 The mirror image of the HPF: it keeps content below `DSP_LPF_CUTOFF_HZ` and
 attenuates higher frequencies (useful for taming hiss or band-limiting).
 
-**Custom path — 1st-order one-pole IIR (Butterworth)** (bilinear transform of an RC low-pass):
+**Custom path (1st-order one-pole IIR (Butterworth)):** bilinear transform of an RC low-pass:
 
 $$
 \begin{aligned}
@@ -177,7 +187,7 @@ $$
 Note this shares the same denominator `a1` as the high-pass; only the feed-forward
 sign differs (`x[n] + x[n−1]` for low-pass vs `x[n] − x[n−1]` for high-pass).
 
-**CMSIS path — 4th-order Butterworth**, same two-biquad cascade and damping pair
+**CMSIS path (4th-order Butterworth):** same two-biquad cascade and damping pair
 as the HPF, with the low-pass numerator:
 
 $$
@@ -188,13 +198,12 @@ a_1 &= \frac{2(1-K^2)}{\mathrm{norm}}, \qquad a_2 = \frac{-(1 - d K + K^2)}{\mat
 \end{aligned}
 $$
 
-> **Note.** As with the HPF, these `a_1`/`a_2` are in the CMSIS DF1 sign
-> convention (negated relative to the standard biquad form) — see the
-> CMSIS DF1 vs. standard biquad note above.
+> **Note:** As with the HPF, these `a_1`/`a_2` are in the CMSIS DF1 sign
+> convention (negated relative to the standard biquad form.
 
-### Reverb — feedback delay-line
+### Reverb (feedback delay-line)
 
-A minimal, classic reverb: a single delay line fed back on itself (a **comb
+A single delay line fed back on itself (a **comb
 filter**). Each output sample is the input plus a scaled copy of what came out
 one delay-length ago:
 
@@ -213,12 +222,11 @@ feedback gain **must satisfy `|g| < 1`**, otherwise the loop's energy grows
 without bound and the output blows up.
 
 There is no CMSIS block function for a feedback delay line, so the CMSIS path
-runs the **same scalar loop**, just on the float buffers — a good illustration
-that not every algorithm has a vectorised library equivalent.
+runs the same scalar loop.
 
-### Moving average — FIR convolution smoothing
+### Moving average (FIR convolution smoothing)
 
-An 8-tap **finite impulse response** filter where every tap weight is equal
+An 8-tap finite impulse response filter where every tap weight is equal
 (`1/8`). This is a moving average:
 
 $$
@@ -226,7 +234,7 @@ y[n] = \sum_{k=0}^{7} h[k] \cdot x[n-k], \qquad h[k] = \tfrac{1}{8} \text{ for a
 $$
 
 A flat moving average is a simple low-pass: it smooths the waveform and gently
-rolls off the high end. Being an FIR, it is **unconditionally stable** and has
+rolls off the high end. Being an FIR, it is unconditionally stable and has
 linear phase. `DSP_CONV_NTAPS` sets the length.
 
 **Custom path** keeps a per-channel history (`conv_hist`), shifts in the newest
@@ -235,11 +243,11 @@ sample, and computes the dot product by hand. **CMSIS path** uses
 a separate scratch buffer (`cmsis_fir_out_*`) which is then copied back so the
 next stage in the chain still reads from `cmsis_buf_*`.
 
-### RIR — Room Impulse Response convolution
+### RIR (Room Impulse Response convolution)
 
-This is the "real" reverb: instead of a single feedback echo, the signal is
-convolved with a full **room impulse response** — the sound a room makes in
-response to an instantaneous click. Convolving any audio with that response
+Simulates a real reverb. The signal is
+convolved with a full **room impulse response** (the sound a room makes in
+response to an instantaneous click). Convolving any audio with that response
 makes it sound as though it were played in that room.
 
 $$
@@ -272,9 +280,15 @@ To use a **measured** RIR instead, you can simply drop your own normalised
 samples into `dsp_rir_kernel[]` (with `h[0]` as the direct path) and skip the
 synthetic builder.
 
-**Wet/dry mix and makeup gain.** Because `h[0] = 1`, the convolution output
-already contains the dry signal at full scale; adding the reverberant tail on
-top would overflow ±32767 and clip. So the output is a blended, scaled mix:
+**Wet/dry mix and makeup gain.** The **dry**
+signal is the original, unprocessed input (here the clean mic sample), while the
+**wet** signal is the fully processed output of the effect (in this case the
+reverberant tail produced by convolving the input with the room response). A
+wet/dry mix lets you dial in how much of the effect you hear: `WET = 0` is
+bypass (dry only), `WET = 1` is the full reverb, and values in between blend the
+two. Because `h[0] = 1`, the convolution output already contains the dry signal
+at full scale; adding the reverberant tail on top would overflow ±32767 and
+clip. So the output is a blended, scaled mix:
 
 $$
 \begin{aligned}
@@ -293,8 +307,8 @@ history with a modular wrap. The CMSIS path does **not** use a circular buffer.
 `arm_fir_f32` keeps a **linear state buffer** of length `N + frames − 1`
 (`cmsis_rir_state`, see `CMSIS_RIR_STATE_LEN`): each call appends the new block
 to the tail, runs a straight (non-modular) multiply-accumulate, and at the end
-`memmove`s the trailing `N − 1` history samples back to the front — a sliding
-delay line rather than a wrapping index. That is why its state array is `frames
+`memmove`s the trailing `N − 1` history samples back to the front, which produces
+a sliding delay line rather than a wrapping index. That is why its state array is `frames
 − 1` longer than the tap count, and why it expects its coefficients
 **time-reversed**, so `DSP_CMSIS_Init` reverses `dsp_rir_kernel[]` into
 `cmsis_rir_coeffs[]` before initialising the filter.
@@ -302,9 +316,16 @@ delay line rather than a wrapping index. That is why its state array is `frames
 > ⚠️ **Cost warning.** The RIR is a plain time-domain FIR, so its cost scales
 > linearly with the tap count `N = DSP_RIR_LEN_MS · fs / 1000`. In this project
 > the M7 runs at only 64 MHz (HSI, no PLL), giving a `DSP_Process` callback just
-> ~64000 cycles per 1 ms block to do *everything* (PDM→PCM, the effect chain,
+> ~64000 cycles per 1 ms block to do everything (PDM→PCM, the effect chain,
 > cache maintenance). Keep `DSP_RIR_LEN_MS` small enough that the convolution
 > fits in the budget.
+
+# D-cache toggling
+
+The cache can be disabled be setting `ENABLE_DCACHE` to `0`. If you disable D-cache, you will
+notice the `DSP_Process` function takes significantly more time and may run out of time
+often (refer to the note at the bottom). This toggle is only meant to show the importance of
+caching in real-time DSP applications.
 
 # Setup tutorial
 
