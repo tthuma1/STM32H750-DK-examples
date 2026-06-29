@@ -54,8 +54,6 @@
 volatile uint32_t bench_custom_cycles;
 volatile uint32_t bench_cmsis_cycles;
 
-/* --- Per-channel DSP state (index 0 = L, 1 = R), zero-initialised ---
-   Custom path and CMSIS reverb share these delay-line buffers.          */
 #if DSP_ENABLE_GATE
   /* Channel-linked noise-gate state, persisted across calls: a smoothed
      peak envelope of the (stereo-max) input, used to derive the gate gain. */
@@ -135,7 +133,7 @@ static inline float dsp_clip(float v)
 
 /**
   * @brief  Apply the enabled DSP effects in place to a block of interleaved
-  *         stereo 16-bit PCM. Effects are chained HPF -> LPF -> reverb -> conv.
+  *         stereo 16-bit PCM. Effects are chained Gate -> HPF -> LPF -> reverb -> conv.
   *         Two paths are available, selected by DSP_USE_CMSIS:
   *           0 = custom hand-rolled sample loop
   *           1 = ARM CMSIS-DSP block functions
@@ -158,8 +156,7 @@ void DSP_Process(uint16_t *pcm, uint32_t frames)
   }
 
 #if DSP_ENABLE_GATE
-  /* Noise gate, applied before any reverb so the mic's idle hiss never feeds
-     the tail. Channel-linked: one envelope/gain drives both L and R so the
+  /* Noise gate. Channel-linked: one envelope/gain drives both L and R so the
      stereo image can't wander. Soft-knee gain ramps 0..1 over [THRESH, THRESH+KNEE]. */
   for (uint32_t i = 0; i < frames; i++)
   {
@@ -309,7 +306,7 @@ void DSP_Process(uint16_t *pcm, uint32_t frames)
 #endif
 #if DSP_ENABLE_RIR
       /* Room-acoustics convolution via a circular history buffer:
-         y[n] = sum_k h[k] * x[n-k], newest input at rir_idx going backwards. */
+         y[n] = sum_k h[k] * x[n-k], newest input at rir_idx going backwards. Wet/dry mix. */
       rir_hist[ch][rir_idx[ch]] = x;
       float racc = 0.0f;
       uint32_t p = rir_idx[ch];
