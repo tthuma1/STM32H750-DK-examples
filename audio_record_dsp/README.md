@@ -360,7 +360,8 @@ Copy these files from this example project to your project:
 
 # Notes
 
-If you hear wierd electric buzzing when running DSP processing, it is very likely that
+- If you hear wierd electric buzzing when running DSP processing, it is very likely that
 your code is too slow and DMA starts reading data before it has finished processing.
 In this case, try to run the SysClock at a faster frequency or optimize your code.
 The M7 core is not capable of very complex real-time DSP operations.
+- For testing the DSP operations, it is useful to find a song with many different frequencies (a lot of bass and hi-hats) and play it next to the MEMS microphone.
