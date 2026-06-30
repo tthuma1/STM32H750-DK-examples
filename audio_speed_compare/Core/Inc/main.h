@@ -59,11 +59,23 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 
 /* USER CODE BEGIN Private defines */
+
+/* SAI4 receive method selector — change SAI_RX_MODE to compare overhead */
+#define SAI_RX_MODE_DMA     0   /* BDMA circular, half + complete callbacks */
+#define SAI_RX_MODE_IT      1   /* SAI FIFO interrupt, re-armed ping-pong   */
+#define SAI_RX_MODE_POLLING 2   /* blocking HAL_SAI_Receive in main loop    */
+#define SAI_RX_MODE         SAI_RX_MODE_DMA
+
 #define AUDIO_FREQUENCY           16000U
 /* Number of uint16 elements in the PDM record buffer (two DMA halves) */
 #define AUDIO_IN_PDM_BUFFER_SIZE  (uint32_t)(128U*AUDIO_FREQUENCY/16000U*2U)
 /* Number of uint16 elements in the PCM playback ring buffer */
 #define AUDIO_BUFF_SIZE           4096U
+
+/* DWT cycles consumed by the CPU per block (transfer wait + PDM→PCM).
+   DMA < IT < Polling. */
+extern uint32_t g_work_cycles;
+
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

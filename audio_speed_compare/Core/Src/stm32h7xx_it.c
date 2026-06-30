@@ -216,4 +216,27 @@ void AUDIO_IN_SAI_PDMx_DMAx_IRQHandler(void)
 {
   BSP_AUDIO_IN_IRQHandler(1, AUDIO_IN_DEVICE_DIGITAL_MIC);
 }
+
+/**
+  * @brief  SAI4 global interrupt handler — used in SAI_RX_MODE_IT.
+  *         Harmless in DMA/POLLING modes because SAI4_IRQn stays disabled.
+  */
+void SAI4_IRQHandler(void)
+{
+  extern SAI_HandleTypeDef haudio_in_sai;
+#if SAI_RX_MODE == SAI_RX_MODE_IT
+  extern uint32_t s_it_acc;
+  extern uint32_t s_isr_entry;
+  /* Reset accumulator at the start of each new block. */
+  if (haudio_in_sai.XferCount == haudio_in_sai.XferSize) {
+    s_it_acc = 0;
+  }
+  s_isr_entry = DWT->CYCCNT;
+  HAL_SAI_IRQHandler(&haudio_in_sai);
+  /* Accumulate CPU time spent in this ISR (idle gaps between calls are excluded). */
+  s_it_acc += DWT->CYCCNT - s_isr_entry;
+#else
+  HAL_SAI_IRQHandler(&haudio_in_sai);
+#endif
+}
 /* USER CODE END 1 */
