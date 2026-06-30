@@ -89,7 +89,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  CPU_CACHE_Enable();
+  SCB_EnableICache();
+  SCB_EnableDCache();
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -396,20 +397,6 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
 void BSP_AUDIO_OUT_Error_CallBack(uint32_t Interface)
 {
   Error_Handler();
-}
-
-/**
-  * @brief  CPU L1-Cache enable.
-  * @param  None
-  * @retval None
-  */
-static void CPU_CACHE_Enable(void)
-{
-  /* Enable I-Cache */
-  SCB_EnableICache();
-
-  /* Enable D-Cache */
-  SCB_EnableDCache();
 }
 
 /* USER CODE END 4 */
